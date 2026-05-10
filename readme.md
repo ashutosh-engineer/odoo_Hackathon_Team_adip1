@@ -1,49 +1,38 @@
 # Traveloop
 
-Travel planning platform for creating trips, building itineraries, tracking packing, managing budgets, and sharing public trip links.
+Traveloop is a judge-ready travel planning platform for creating trips, building itineraries, tracking packing, managing budgets, and sharing public trip links.
 
-## Repository Structure
+## Hackathon Summary
 
-This repository is organized so GitHub shows a clear split between backend logic, frontend assets, and supporting project files.
+Traveloop turns trip planning into one organized workflow instead of scattered notes, chats, spreadsheets, and reminders. The app lets a traveler create a trip, plan stops and activities, track packing and spending, and share the final itinerary with others through a public link.
+
+What makes this submission strong:
+
+- A complete trip-planning workflow from account creation to sharing
+- A production-aware Flask backend with safer defaults and centralized helpers
+- Ownership checks across user-scoped data so travelers only see their own content
+- Security hardening for redirects, cookies, error handling, and request parsing
+- Clear product and system design that can scale beyond a hackathon demo
+
+## Project Layout
+
+The codebase is organized for clarity, not for hiding implementation details.
 
 ```text
 .
-├── backend/            # Flask application, models, routes, helpers, security
-├── frontend/           # UI assets and templates/static files
-├── Database/           # Local database artifacts during development
+├── backend/            # Flask app, models, routes, helpers, security, config
+├── frontend/           # UI assets, templates, and static files
+├── Database/           # Local development database artifacts
 ├── run.py              # Root-level Flask entrypoint
 ├── requirements.txt    # Root-level Python dependency list
-├── readme.md           # Project documentation
-├── .env.example        # Environment template for GitHub
-└── .gitignore          # Repository ignore rules
+└── readme.md           # Project documentation and design notes
 ```
-
-File placement rules:
-
-- `requirements.txt` stays at the repository root so one install command covers the whole project.
-- `run.py` stays at the repository root as the top-level entrypoint for local execution.
-- `backend/` should contain the Flask package only, not the dependency manifest or root launcher.
-
-What should be committed to GitHub:
-
-- Source code in `backend/` and `frontend/`
-- Dependency files like `requirements.txt` and `frontend/package.json`
-- Documentation and workflow notes
-- Environment templates such as `.env.example`
-- Ignore rules and any non-secret config scaffolding
-- Local workflow notes should remain untracked and stay out of GitHub
-
-What should not be committed:
-
-- Real `.env` files
-- SQLite database files
-- Generated uploads
-- Virtual environments
-- Build output and cache folders
 
 ## 1. Problem Statement
 
 Travel planning usually gets scattered across notes, messages, maps, spreadsheets, and reminders. Traveloop consolidates that workflow into one server-rendered web app so a traveler can plan, organize, and review an entire trip in one place.
+
+The product goal is simple: reduce planning friction while keeping the experience understandable, secure, and easy to demo.
 
 Inputs:
 
@@ -72,20 +61,20 @@ Core entities:
 - TripNote
 - TripExpense
 
-## 2. Features
+## 2. Key Features
 
-MVP features implemented in the backend:
+Traveloop covers the core travel-planning journey end to end:
 
 - Session-based authentication with signup, login, and logout
-- Trip CRUD with ownership checks
-- Itinerary builder with stops and scheduled activities
-- Budget tracking with manual expenses and activity-based cost summaries
-- Packing checklist with completion toggles
-- Trip notes and journaling
-- Public share links with token-based access
-- Profile management for name, email, password, and account deletion
+- Trip creation, editing, and deletion with ownership checks
+- Itinerary building with stops and scheduled activities
+- Budget tracking with manual expenses and trip-wide cost summaries
+- Packing checklist management with completion toggles
+- Trip notes and journaling for day-by-day planning
+- Public share links for read-only trip access
+- Profile management for account updates and password changes
 
-Operational features now added for hardening:
+Operational hardening included in the backend:
 
 - Environment-aware config selection
 - Controlled database bootstrap and seed behavior
@@ -116,7 +105,16 @@ Alternatives rejected for this scope:
 - External DB services: more operational overhead than needed for the current phase.
 - Full SPA architecture: would add complexity without improving the core workflow here.
 
-## 4. Architecture (HLD)
+## 4. Why It Matters
+
+This project is built to demonstrate more than basic CRUD.
+
+- It shows a complete domain workflow with real user value.
+- It demonstrates backend structure that is maintainable under production constraints.
+- It includes explicit security decisions rather than assuming the demo environment is safe.
+- It documents the product and the system clearly enough for reviewers to evaluate design trade-offs.
+
+## 5. Architecture (HLD)
 
 The app uses a layered Flask architecture:
 
@@ -155,7 +153,7 @@ Trade-offs:
 - SQLite is efficient for local development, but a multi-user production deployment should move to PostgreSQL or another robust server database.
 - Shared helpers reduce duplication, but they should stay small and explicit to avoid hiding business rules.
 
-## 5. Database Design
+## 6. Database Design
 
 High-level ER model:
 
@@ -195,7 +193,7 @@ Known limitations:
 - SQLite is fine for demos and early growth, but production should use a server database with better concurrency.
 - Cost and duration are currently represented with simple numeric fields rather than a more detailed pricing model.
 
-## 6. API Documentation
+## 7. API Documentation
 
 Main endpoints:
 
@@ -233,7 +231,7 @@ Edge cases handled:
 - Empty or missing required fields are rejected server-side.
 - Login redirect targets are checked for same-host safety.
 
-## 7. UI/UX Decisions
+## 8. UI/UX Decisions
 
 The backend is structured for a server-rendered experience with distinct pages for each task domain:
 
@@ -254,7 +252,7 @@ Layout reasoning:
 
 The current workspace snapshot does not include HTML template files, so the UI is documented from the route structure and rendering intent rather than from concrete template implementations.
 
-## 8. Security
+## 9. Security
 
 Security mechanism:
 
@@ -281,7 +279,7 @@ Vulnerabilities prevented:
 - Accidental GET-based destructive actions
 - Unbounded file uploads via configured size limits
 
-## 9. Scalability
+## 10. Scalability
 
 Current capacity:
 
@@ -306,7 +304,7 @@ Trade-offs:
 - Keeping the app server-rendered simplifies operations, but some highly interactive flows would benefit from background processing later.
 - Dynamic relationships keep the code readable, but very large datasets may need pagination or projection queries.
 
-## 10. Logging & Debugging
+## 11. Logging & Debugging
 
 Logging strategy:
 
@@ -326,7 +324,7 @@ How to trace issues:
 - Reproduce the request with the same ownership and payload shape.
 - Verify the relevant helper function or ownership query.
 
-## 11. Setup & Installation
+## 12. Setup & Installation
 
 Prerequisites:
 
@@ -359,7 +357,7 @@ Run modes:
 - Local demo: development env with auto-create and auto-seed enabled.
 - Production: production env with secure cookies, real DB URL, and startup automation disabled.
 
-## 12. Design Decisions
+## 13. Design Decisions
 
 Major reasons behind the current structure:
 
