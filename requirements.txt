@@ -1,0 +1,11 @@
+# Core web framework — lightweight, production-proven
+Flask==3.1.0
+
+# ORM layer — clean model definitions, relationship mapping
+Flask-SQLAlchemy==3.1.1
+
+# Session-based authentication — handles login state and @login_required
+Flask-Login==0.6.3
+
+# Form handling with CSRF protection — prevents cross-site request forgery
+Flask-WTF==1.2.2

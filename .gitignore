@@ -1,0 +1,35 @@
+# Traveloop — Git Ignore Rules
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environment
+venv/
+env/
+.venv/
+
+# Database (local SQLite — not committed)
+*.db
+
+# Environment variables
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Uploads (user-generated content)
+frontend/static/uploads/*
+!frontend/static/uploads/.gitkeep
