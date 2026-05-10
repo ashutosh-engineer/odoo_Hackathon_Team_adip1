@@ -9,6 +9,9 @@ import logging
 import os
 from flask import Flask
 from flask_wtf import CSRFProtect
+from flask_session import Session
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from backend.config import get_config_class
 from backend.models import db, login_manager
 from backend.routes import register_routes
@@ -19,6 +22,8 @@ FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'fronten
 TEMPLATE_DIR = os.path.join(FRONTEND_DIR, 'templates')
 STATIC_DIR = os.path.join(FRONTEND_DIR, 'static')
 csrf = CSRFProtect()
+session_handler = Session()
+limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
 
 
 def _configure_logging(app):
@@ -58,7 +63,11 @@ def create_app(config_class=None):
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.session_protection = 'strong'
+    
+    session_handler.init_app(app)
     csrf.init_app(app)
+    limiter.init_app(app)
+    
     register_security(app)
     register_routes(app)
     register_error_handlers(app)
@@ -78,3 +87,4 @@ def create_app(config_class=None):
             seed_database()
 
     return app
+

@@ -1,0 +1,99 @@
+version: '3.9'
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: traveloop_db
+      POSTGRES_USER: traveloop
+      POSTGRES_PASSWORD: traveloop
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U traveloop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  app1:
+    build: .
+    ports:
+      - "5001:5000"
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://traveloop:traveloop@postgres:5432/traveloop_db
+      REDIS_URL: redis://redis:6379/0
+      RATELIMIT_STORAGE_URL: redis://redis:6379/2
+      AUTO_CREATE_DB: "true"
+      AUTO_SEED_DATA: "true"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: gunicorn -c gunicorn_config.py --bind 0.0.0.0:5000 run:app
+
+  app2:
+    build: .
+    ports:
+      - "5002:5000"
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://traveloop:traveloop@postgres:5432/traveloop_db
+      REDIS_URL: redis://redis:6379/0
+      RATELIMIT_STORAGE_URL: redis://redis:6379/2
+      AUTO_CREATE_DB: "false"
+      AUTO_SEED_DATA: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: gunicorn -c gunicorn_config.py --bind 0.0.0.0:5000 run:app
+
+  app3:
+    build: .
+    ports:
+      - "5003:5000"
+    environment:
+      FLASK_ENV: production
+      DATABASE_URL: postgresql://traveloop:traveloop@postgres:5432/traveloop_db
+      REDIS_URL: redis://redis:6379/0
+      RATELIMIT_STORAGE_URL: redis://redis:6379/2
+      AUTO_CREATE_DB: "false"
+      AUTO_SEED_DATA: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command: gunicorn -c gunicorn_config.py --bind 0.0.0.0:5000 run:app
+
+  nginx:
+    image: nginx:alpine
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - app1
+      - app2
+      - app3
+
+volumes:
+  postgres_data:
+  redis_data:

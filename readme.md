@@ -12,7 +12,9 @@ What makes this submission strong:
 - A production-aware Flask backend with safer defaults and centralized helpers
 - Ownership checks across user-scoped data so travelers only see their own content
 - Security hardening for redirects, cookies, error handling, and request parsing
-- Clear product and system design that can scale beyond a hackathon demo
+- PostgreSQL relational database, Redis-backed sessions and caching, and rate limiting
+- Horizontal scaling: stateless app instances behind a load balancer
+- Clear product and system design ready for high-concurrency production deployments
 
 ## Project Layout
 
@@ -345,13 +347,18 @@ Step-by-step setup:
 Environment variables:
 
 - `APP_ENV`: `development`, `production`, or `testing`
-- `DATABASE_URL`: override the default SQLite path
+- `DATABASE_URL`: PostgreSQL connection string (defaults to `postgresql://traveloop:traveloop@localhost:5432/traveloop_db`)
+- `REDIS_URL`: Redis connection for sessions and cache (defaults to `redis://localhost:6379/0`)
+- `RATELIMIT_STORAGE_URL`: Redis database for rate limiting (defaults to `redis://localhost:6379/2`)
 - `SECRET_KEY`: required for secure sessions
 - `FLASK_DEBUG`: enable only for local debugging
 - `PORT`: application port for local or deployed execution
 - `LOG_LEVEL`: controls backend verbosity
 - `AUTO_CREATE_DB`: allow `db.create_all()` at startup
 - `AUTO_SEED_DATA`: allow seed loading at startup
+- `SESSION_COOKIE_SECURE`: enable secure-only session cookies (production)
+- `GUNICORN_WORKERS`: number of worker processes (defaults to CPU count × 2 + 1)
+- `GUNICORN_BIND`: bind address for Gunicorn (defaults to `127.0.0.1:5000`)
 
 Run modes:
 
@@ -368,14 +375,64 @@ Major reasons behind the current structure:
 - Local seed data keeps the app self-contained and demo-friendly.
 - Random share tokens are safer than predictable public IDs.
 - Security headers and error handlers raise the baseline without adding heavy infrastructure.
+- PostgreSQL provides strong consistency for ownership-heavy trip workflows.
+- Redis-backed sessions and caching enable truly stateless application servers.
+- Gunicorn with configurable workers supports horizontal scaling behind a load balancer.
 
-What would change at scale:
+## 14. Deployment & Scaling
 
-- Switch to PostgreSQL.
-- Add proper CSRF enforcement to every form once templates are confirmed.
-- Add pagination and filtering on all large collections.
-- Add background jobs for notifications or export tasks.
-- Add test coverage around auth, ownership checks, and public sharing.
+The application is built for high-concurrency production deployments:
+
+### Database: PostgreSQL
+- Replaced SQLite with PostgreSQL for production-grade reliability and concurrency.
+- Supports multiple concurrent connections from stateless app instances.
+- Environment: Set `DATABASE_URL=postgresql://user:pass@host:port/db_name`
+
+### Session & Cache: Redis
+- Sessions are stored in Redis, not in-memory, so any instance can serve any user.
+- Cache data (popular cities, trip summaries) lives in Redis for instant retrieval.
+- Rate limiting state is also persisted in Redis, making limits consistent across instances.
+- Environment: Set `REDIS_URL=redis://host:port/db_number`
+
+### Load Balancing & Horizontal Scaling
+- Gunicorn runs multiple independent worker processes on each machine.
+- Nginx (or any reverse proxy) distributes traffic across multiple app instances.
+- Included `docker-compose.yml` demonstrates 3 app instances behind Nginx.
+- Each instance is stateless: all shared state lives in PostgreSQL or Redis.
+- Scale by adding more app containers/machines; no code changes required.
+
+### Running with Docker Compose (Local High-Concurrency Demo)
+```bash
+docker-compose up
+```
+
+This spins up:
+- PostgreSQL database
+- Redis cache/session store
+- 3 Flask app instances (ports 5001–5003)
+- Nginx load balancer on port 80
+
+Test load balancing:
+```bash
+curl http://localhost  # Nginx distributes across app1, app2, app3
+```
+
+### Production Deployment
+1. Set environment variables for PostgreSQL, Redis, and SECRET_KEY.
+2. Run Gunicorn with the included config: `gunicorn -c gunicorn_config.py run:app`
+3. Place Nginx or equivalent reverse proxy in front (same config can be adapted).
+4. Scale by running additional app instances on the same or different machines.
+5. Both PostgreSQL and Redis should be deployed with their own HA setup (replication, failover).
+
+## 15. Future Enhancements
+
+Potential additions that would further improve scalability and UX:
+
+- Full CSRF enforcement on all form submissions (cookie-based tokens ready).
+- Background job queue (Redis-based task worker for notifications, exports, analytics).
+- Test suite covering auth, ownership, public sharing, and data consistency.
+- Frontend SPA (React or Vue) for real-time updates and offline-first features.
+- Kubernetes manifests for cloud-native deployment on EKS, GKE, AKS, or self-hosted.
 
 ## Team
 
