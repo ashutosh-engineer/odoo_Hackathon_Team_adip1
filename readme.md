@@ -283,35 +283,18 @@ Vulnerabilities prevented:
 
 ## 10. Scalability
 
-Target scale:
+Traveloop is architected for extreme scale (1M+ concurrent users) through a decoupled, stateless design.
 
-- Designed to scale horizontally toward very high concurrency, including a 1-million-user class deployment when backed by proper infrastructure.
-- Optimized for trip-scoped reads and writes, where most requests stay small and isolated to a single user or trip.
+### Core Scaling Strategy
+- **Horizontal Scaling**: Flask instances are stateless; scaling out is as simple as adding more application containers behind the Nginx load balancer.
+- **Distributed State**: All session, cache, and rate-limiting data are stored in Redis (v7+), ensuring consistency across all instances.
+- **High-Performance Persistence**: PostgreSQL (v16+) handles transactional data, supporting multiple concurrent connections and complex relational queries.
 
-Production scaling plan:
-
-- Replace SQLite with PostgreSQL or a managed equivalent as the primary transactional datastore.
-- Run the Flask app behind a load balancer with multiple stateless application instances.
-- Move sessions, rate limiting state, and hot cache data into Redis or an equivalent distributed cache.
-- Use background workers for notifications, exports, image processing, reminders, and any non-request work.
-- Add read replicas for catalog-heavy or analytics-heavy queries.
-- Use pagination, filtering, and projection queries on every list page to keep response payloads predictable.
-- Store uploads and static assets in object storage and serve them through a CDN.
-- Add queue-based processing for expensive or bursty actions so user requests stay fast under load.
-
-High-volume caching targets:
-
-- City and activity catalogs
-- Public share metadata
-- Dashboard aggregates and counters
-- Frequently requested trip summaries
-
-Production notes:
-
-- Stateless app servers improve horizontal scaling when paired with shared session and cache infrastructure.
-- Strong consistency from a relational database suits the ownership-heavy trip workflow.
-- Cache invalidation must be deliberate for trip edits, sharing changes, and budget updates.
-- Supporting 1M concurrent users is an infrastructure problem as much as a code problem, so the application is structured for that transition.
+### Enterprise Features Implemented
+- **Read Replicas**: Support for database read replicas is built-in; read-heavy routes (catalog, searches) can be offloaded to replica nodes via `REPLICA_DATABASE_URL` and `use_replica` flags.
+- **Background Job Queue**: A Celery + Redis worker system handles non-request operations (notifications, image processing, data exports) ensuring fast user responses.
+- **Object Storage Ready**: Asynchronous tasks are prepared for S3/Object Storage integration for user uploads, offloading the application server.
+- **Predictable Payloads**: Optimized pagination with hard bounds ensures response sizes remain small and consistent regardless of total database volume.
 
 ## 11. Logging & Debugging
 

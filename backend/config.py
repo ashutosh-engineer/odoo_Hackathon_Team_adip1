@@ -25,6 +25,9 @@ class BaseConfig:
         'DATABASE_URL',
         'postgresql://traveloop:traveloop@localhost:5432/traveloop_db'
     )
+    SQLALCHEMY_BINDS = {
+        'replica': os.environ.get('REPLICA_DATABASE_URL', os.environ.get('DATABASE_URL', 'postgresql://traveloop:traveloop@localhost:5432/traveloop_db'))
+    }
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     MAX_CONTENT_LENGTH = 5 * 1024 * 1024
     

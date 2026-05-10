@@ -72,8 +72,11 @@ def get_pagination_params(default_per_page=20, max_per_page=50):
     return page, per_page
 
 
-def paginate_query(query, page=None, per_page=None, default_per_page=20, max_per_page=50):
+def paginate_query(query, page=None, per_page=None, default_per_page=20, max_per_page=50, use_replica=False):
     """Paginate a SQLAlchemy query using bounded request parameters."""
+    if use_replica and 'replica' in db.engines:
+        query = query.with_bind_key('replica')
+        
     page = page or request.args.get('page', default=1, type=int) or 1
     per_page = per_page or request.args.get('per_page', default=default_per_page, type=int) or default_per_page
     page = max(page, 1)
@@ -81,9 +84,12 @@ def paginate_query(query, page=None, per_page=None, default_per_page=20, max_per
     return db.paginate(query, page=page, per_page=per_page, error_out=False)
 
 
-def get_owned_trip_or_404(trip_id, user_id):
+def get_owned_trip_or_404(trip_id, user_id, use_replica=False):
     """Load a trip owned by the active user."""
-    return Trip.query.filter_by(id=trip_id, user_id=user_id).first_or_404()
+    query = Trip.query.filter_by(id=trip_id, user_id=user_id)
+    if use_replica and 'replica' in db.engines:
+        query = query.with_bind_key('replica')
+    return query.first_or_404()
 
 
 def get_owned_stop_or_404(stop_id, trip_id):

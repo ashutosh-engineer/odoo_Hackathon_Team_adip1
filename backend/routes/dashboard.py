@@ -1,13 +1,7 @@
 """
-Dashboard Route
-----------------
-The central hub after login — shows dynamic data:
-- Welcome message with user's name
-- Their recent trips (sorted by last updated)
-- Popular destinations from the database (most added to trips)
-- Quick actions: create trip, explore cities
+Dashboard route.
 
-All data is pulled from the database — no hardcoded content.
+Central hub showing user's recent trips, popular destinations, and stats.
 """
 
 from flask import Blueprint, render_template
@@ -22,11 +16,6 @@ dashboard_bp = Blueprint('dashboard', __name__)
 @dashboard_bp.route('/dashboard')
 @login_required
 def home():
-    """
-    Render the main dashboard with dynamic, user-specific content.
-    Performance: limited queries with .limit() to avoid loading everything.
-    """
-    # Recent trips — show latest 6, ordered by most recently updated
     recent_trips = (
         Trip.query
         .filter_by(user_id=current_user.id)
@@ -44,7 +33,6 @@ def home():
         .all()
     )
 
-    # Stats for the user's overview cards
     total_trips = Trip.query.filter_by(user_id=current_user.id).count()
     upcoming_trips = (
         Trip.query

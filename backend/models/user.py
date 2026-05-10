@@ -1,13 +1,8 @@
 """
 User Model
-----------
-Represents a registered traveler on the platform.
 
-Design decisions:
-- password_hash stores bcrypt/scrypt output, never plaintext
-- is_admin flag kept simple (no role table) — sufficient for hackathon scope
-- avatar_url is optional; UI shows initials as fallback
-- Inherits UserMixin for Flask-Login compatibility (is_authenticated, etc.)
+Represents a registered traveler on the platform.
+Passwords are securely hashed, and Flask-Login integration handles session state.
 """
 
 from datetime import datetime, timezone
