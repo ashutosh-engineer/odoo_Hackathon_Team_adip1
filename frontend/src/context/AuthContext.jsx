@@ -1,15 +1,12 @@
 /*
  * Auth Context
  * ------------
- * Global authentication state shared across all components via React Context.
- * 
- * Why Context instead of prop drilling?
- *   - User state is needed in sidebar, dashboard, trip pages, profile
- *   - Passing it through every component tree level is messy
- *   - Context + useAuth() hook gives clean access anywhere
+ * Global authentication state — wired to the real Flask API.
  *
- * On mount, checks /api/auth/me to see if the session is still valid.
- * This handles page refreshes without re-logging in.
+ * On mount: calls /api/auth/me to restore session from Redis-backed cookie.
+ * login()  → POST /api/auth/login
+ * signup() → POST /api/auth/signup
+ * logout() → POST /api/auth/logout
  */
 
 import { createContext, useContext, useState, useEffect } from 'react';
@@ -19,51 +16,56 @@ import { bypassAuth, bypassUser } from '../config/auth';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(bypassAuth ? bypassUser : null);
+  const [user, setUser]       = useState(bypassAuth ? bypassUser : null);
   const [loading, setLoading] = useState(!bypassAuth);
 
-  // Check session on initial load (skipped when bypassing auth UI)
+  /* ── Restore session on page load ── */
   useEffect(() => {
     if (bypassAuth) return;
-    // ── DUMMY: skip session restore, just mark loading done ──
-    setLoading(false);
+
+    api.get('/auth/me')
+      .then((data) => {
+        if (data?.authenticated && data.user) {
+          setUser(data.user);
+        }
+      })
+      .catch(() => {
+        // Network error or server down — stay logged out
+      })
+      .finally(() => setLoading(false));
   }, []);
 
+  /* ── Login ── */
   async function login(email, password) {
-    // ── DUMMY AUTH — no API call ──
-    // Accepts any non-empty email + password (min 6 chars)
-    if (!email || !password || password.length < 6) {
-      throw new Error('Invalid email or password.');
+    const data = await api.post('/auth/login', { email, password });
+    if (data?.data) {
+      setUser(data.data);
     }
-    const mockUser = {
-      name: email.split('@')[0].replace(/[._]/g, ' ').replace(/\b\w/g, c => c.toUpperCase()),
-      email,
-      initials: email.slice(0, 2).toUpperCase(),
-    };
-    setUser(mockUser);
-    return { data: mockUser };
+    return data;
   }
 
+  /* ── Signup ── */
   async function signup(name, email, password, confirm_password) {
-    // ── DUMMY AUTH — no API call ──
-    if (!name || name.length < 2) throw new Error('Name must be at least 2 characters.');
-    if (!email) throw new Error('Email is required.');
-    if (!password || password.length < 6) throw new Error('Password must be at least 6 characters.');
-    if (password !== confirm_password) throw new Error('Passwords do not match.');
-    const mockUser = {
-      name,
-      email,
-      initials: name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2),
-    };
-    setUser(mockUser);
-    return { data: mockUser };
+    const data = await api.post('/auth/signup', { name, email, password, confirm_password });
+    if (data?.data) {
+      setUser(data.data);
+    }
+    return data;
   }
 
+  /* ── Logout ── */
   async function logout() {
-    // ── DUMMY: no API call, just clear user ──
+    if (!bypassAuth) {
+      try {
+        await api.post('/auth/logout', {});
+      } catch {
+        // Ignore — clear local state regardless
+      }
+    }
     setUser(bypassAuth ? bypassUser : null);
   }
 
+  /* ── Update local user state after profile edit ── */
   function updateUser(updates) {
     setUser((prev) => ({ ...prev, ...updates }));
   }

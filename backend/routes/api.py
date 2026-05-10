@@ -11,6 +11,7 @@ from backend.models.itinerary import Stop, StopActivity
 from backend.models.packing import PackingItem, TripNote
 from backend.forms import LoginForm, RegistrationForm, TripForm, ProfileUpdateForm, ChangePasswordForm
 from backend.security import admin_required
+from backend.helpers import paginate_query
 import secrets
 from datetime import date
 
@@ -89,16 +90,35 @@ def api_logout():
 
 @api_bp.route('/auth/forgot-password', methods=['POST'])
 def api_forgot_password():
-    """Accept reset requests without revealing whether the email exists (no SMTP in hackathon demo)."""
+    """Accept reset requests without revealing whether the email exists."""
     data = request.get_json() or {}
     email = (data.get('email') or '').strip().lower()
     if not email:
         return error_response('Email is required.')
-    # Optional lookup — never branch the outward message on existence
     User.query.filter_by(email=email).first()
     return success_response(
         message='If an account exists for this email, you will receive password reset instructions shortly.',
     )
+
+
+@api_bp.route('/auth/change-password', methods=['POST'])
+@login_required
+def api_change_password():
+    """Change the current user's password after verifying the old one."""
+    data = request.get_json() or {}
+    old_password = data.get('old_password', '')
+    new_password = data.get('new_password', '')
+
+    if not old_password or not new_password:
+        return error_response('Both old and new passwords are required.')
+    if len(new_password) < 6:
+        return error_response('New password must be at least 6 characters.')
+    if not current_user.check_password(old_password):
+        return error_response('Current password is incorrect.', 401)
+
+    current_user.set_password(new_password)
+    db.session.commit()
+    return success_response(message='Password changed successfully.')
 
 
 @api_bp.route('/auth/me')
@@ -145,15 +165,9 @@ def api_dashboard():
 @api_bp.route('/trips')
 @login_required
 def api_list_trips():
-    """List user's trips with pagination and replica support."""
+    """List user's trips with pagination."""
     query = Trip.query.filter_by(user_id=current_user.id).order_by(Trip.updated_at.desc())
-    
-    pagination = paginate_query(
-        query,
-        default_per_page=10,
-        use_replica=True
-    )
-    
+    pagination = paginate_query(query, default_per_page=10)
     return jsonify({
         'trips': [_trip_to_dict(t) for t in pagination.items],
         'total': pagination.total,
@@ -193,13 +207,9 @@ def api_create_trip():
 @api_bp.route('/trips/<int:trip_id>')
 @login_required
 def api_get_trip(trip_id):
-    """Retrieve detailed trip data, using replica for read-only access."""
-    from backend.helpers import get_owned_trip_or_404
-    trip = get_owned_trip_or_404(trip_id, current_user.id, use_replica=True)
-    
-    # Eagerly load stops from the same bind if needed
+    """Retrieve detailed trip data."""
+    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
     stops = trip.stops.all()
-    
     return jsonify({
         **_trip_to_dict(trip),
         'stops': [_stop_to_dict(s) for s in stops]
@@ -344,7 +354,7 @@ def api_remove_stop_activity(stop_id, sa_id):
 @api_bp.route('/cities')
 @login_required
 def api_cities():
-    """Search for cities with pagination and optional replica support."""
+    """Search city catalog with text, region, and cost filters."""
     q = request.args.get('q', '').strip()
     region = request.args.get('region', '').strip()
     cost_max = request.args.get('cost_max', type=float)
@@ -358,14 +368,8 @@ def api_cities():
     if cost_max is not None:
         query = query.filter(City.cost_index <= cost_max)
 
-    # Apply pagination and use replica for this read-heavy search
-    pagination = paginate_query(
-        query.order_by(City.popularity.desc()),
-        default_per_page=12,
-        use_replica=True
-    )
-    
-    regions = [r[0] for r in City.query.with_bind_key('replica').with_entities(City.region).distinct().all() if r[0]]
+    pagination = paginate_query(query.order_by(City.popularity.desc()), default_per_page=12)
+    regions = [r[0] for r in City.query.with_entities(City.region).distinct().all() if r[0]]
 
     return jsonify({
         'cities': [_city_to_dict(c) for c in pagination.items],
@@ -380,7 +384,7 @@ def api_cities():
 @api_bp.route('/activities')
 @login_required
 def api_activities():
-    """Search for activities with pagination and replica support."""
+    """Search activity catalog by city and category."""
     city_id = request.args.get('city_id', type=int)
     category = request.args.get('category', '').strip()
 
@@ -390,14 +394,8 @@ def api_activities():
     if category:
         query = query.filter(Activity.category == category)
 
-    # Use replica for read-heavy catalog searches
-    pagination = paginate_query(
-        query.order_by(Activity.name),
-        default_per_page=20,
-        use_replica=True
-    )
-    
-    categories = [c[0] for c in Activity.query.with_bind_key('replica').with_entities(Activity.category).distinct().all() if c[0]]
+    pagination = paginate_query(query.order_by(Activity.name), default_per_page=20)
+    categories = [c[0] for c in Activity.query.with_entities(Activity.category).distinct().all() if c[0]]
 
     return jsonify({
         'activities': [_activity_to_dict(a) for a in pagination.items],
@@ -620,6 +618,18 @@ def api_presence_heartbeat(trip_id):
 @login_required
 def api_presence_leave(trip_id):
     """Explicitly remove the user from the presence set (page unload)."""
+    from backend.services.presence import leave
+    leave(trip_id, current_user.id)
+    return success_response(message='Left.')
+
+
+@api_bp.route('/trips/<int:trip_id>/presence/leave', methods=['POST'])
+@login_required
+def api_presence_leave_beacon(trip_id):
+    """
+    sendBeacon-compatible leave endpoint (POST only).
+    Called by the browser's beforeunload handler via navigator.sendBeacon.
+    """
     from backend.services.presence import leave
     leave(trip_id, current_user.id)
     return success_response(message='Left.')
