@@ -37,11 +37,15 @@ async function request(endpoint, options = {}) {
     data = await response.text();
   }
 
-  // Session missing — bounce to login unless we are bypassing the auth UI only
+  // Session missing — bounce to login (but not if already there)
   if (response.status === 401) {
     if (!bypassAuth) {
-      window.location.href = '/login';
-      return null;
+      const alreadyOnAuth = ['/login', '/signup', '/forgot-password']
+        .some(p => window.location.pathname.startsWith(p));
+      if (!alreadyOnAuth) {
+        window.location.href = '/login';
+        return null;
+      }
     }
     const errorMsg =
       typeof data === 'object' && data != null ? (data.error || data.message) : null;

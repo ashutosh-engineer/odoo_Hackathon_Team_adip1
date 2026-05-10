@@ -35,15 +35,18 @@ import SharedTrip from './pages/SharedTrip';
 /* Route guard — redirects to login if not authenticated */
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
+  // Show loader only on initial session restore (first mount)
   if (loading) return <PageLoader label="Restoring session…" />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
 
-/* Redirect away from auth pages if already logged in */
+/* Redirect away from auth pages if already logged in.
+   Never blocks on loading — if user is null, show the auth page immediately. */
 function GuestRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <PageLoader label="One moment…" />;
+  // Only block if loading AND we don't yet know if user is logged in
+  if (loading && user === null) return <PageLoader label="One moment…" />;
   if (user) return <Navigate to="/" replace />;
   return children;
 }

@@ -1,19 +1,34 @@
 /*
- * Auth Context
- * ------------
- * Global authentication state — wired to the real Flask API.
+ * Auth Context — wired to the real Flask API.
  *
- * On mount: calls /api/auth/me to restore session from Redis-backed cookie.
+ * On mount: GET /api/auth/me  — restores session from cookie
  * login()  → POST /api/auth/login
  * signup() → POST /api/auth/signup
- * logout() → POST /api/auth/logout
+ * logout() → POST /api/auth/logout  (does NOT redirect on 401)
  */
 
 import { createContext, useContext, useState, useEffect } from 'react';
-import { api } from '../api/client';
 import { bypassAuth, bypassUser } from '../config/auth';
 
 const AuthContext = createContext(null);
+
+const BASE = '/api';
+
+/* Raw fetch that never redirects on 401 — used only for auth calls */
+async function authFetch(endpoint, options = {}) {
+  const res = await fetch(`${BASE}${endpoint}`, {
+    headers: { 'Content-Type': 'application/json' },
+    credentials: 'include',
+    ...options,
+  });
+  const ct = res.headers.get('content-type') || '';
+  const data = ct.includes('application/json') ? await res.json() : await res.text();
+  if (!res.ok) {
+    const msg = (typeof data === 'object' && data?.error) || data || 'Request failed';
+    throw new Error(msg);
+  }
+  return data;
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser]       = useState(bypassAuth ? bypassUser : null);
@@ -22,58 +37,49 @@ export function AuthProvider({ children }) {
   /* ── Restore session on page load ── */
   useEffect(() => {
     if (bypassAuth) return;
-
-    api.get('/auth/me')
+    authFetch('/auth/me')
       .then((data) => {
-        if (data?.authenticated && data.user) {
-          setUser(data.user);
-        }
+        if (data?.authenticated && data.user) setUser(data.user);
       })
-      .catch(() => {
-        // Network error or server down — stay logged out
-      })
+      .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
 
   /* ── Login ── */
   async function login(email, password) {
-    const data = await api.post('/auth/login', { email, password });
-    if (data?.data) {
-      setUser(data.data);
-    }
+    const data = await authFetch('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password }),
+    });
+    if (data?.data) setUser(data.data);
     return data;
   }
 
   /* ── Signup ── */
   async function signup(name, email, password, confirm_password) {
-    const data = await api.post('/auth/signup', { name, email, password, confirm_password });
-    if (data?.data) {
-      setUser(data.data);
-    }
+    const data = await authFetch('/auth/signup', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password, confirm_password }),
+    });
+    if (data?.data) setUser(data.data);
     return data;
   }
 
-  /* ── Logout ── */
+  /* ── Logout — clears user state, never triggers 401 redirect ── */
   async function logout() {
     if (!bypassAuth) {
-      try {
-        await api.post('/auth/logout', {});
-      } catch {
-        // Ignore — clear local state regardless
-      }
+      // Fire-and-forget — we clear local state regardless of server response
+      authFetch('/auth/logout', { method: 'POST' }).catch(() => {});
     }
     setUser(bypassAuth ? bypassUser : null);
   }
 
-  /* ── Update local user state after profile edit ── */
   function updateUser(updates) {
     setUser((prev) => ({ ...prev, ...updates }));
   }
 
-  const value = { user, loading, login, signup, logout, updateUser };
-
   return (
-    <AuthContext.Provider value={value}>
+    <AuthContext.Provider value={{ user, loading, login, signup, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

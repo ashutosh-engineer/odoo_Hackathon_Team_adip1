@@ -43,8 +43,8 @@ def _configure_logging(app):
 def create_app(config_class=None):
     """
     Build and configure the Flask application.
-    Templates and static assets are served from the frontend/ directory,
-    keeping UI and backend logic cleanly separated.
+    Works with SQLite + filesystem sessions locally (no Redis/PostgreSQL needed).
+    In production: PostgreSQL + Redis.
     """
     config_class = config_class or get_config_class()
 
@@ -54,6 +54,16 @@ def create_app(config_class=None):
         static_folder=STATIC_DIR
     )
     app.config.from_object(config_class)
+
+    # Apply dynamic session config (Redis if available, filesystem otherwise)
+    if hasattr(config_class, '_session_config'):
+        app.config.update(config_class._session_config())
+
+    # Ensure filesystem session dir exists
+    session_dir = app.config.get('SESSION_FILE_DIR')
+    if session_dir:
+        os.makedirs(session_dir, exist_ok=True)
+
     _configure_logging(app)
 
     upload_dir = os.path.join(STATIC_DIR, 'uploads')
@@ -63,14 +73,17 @@ def create_app(config_class=None):
     db.init_app(app)
     login_manager.init_app(app)
     login_manager.session_protection = 'strong'
-    
+
     session_handler.init_app(app)
     csrf.init_app(app)
     limiter.init_app(app)
-    
+
     register_security(app)
     register_routes(app)
     register_error_handlers(app)
+
+    # Serve the React SPA for all non-API routes
+    _register_spa_fallback(app)
 
     with app.app_context():
         from backend.models.user import User
@@ -87,4 +100,41 @@ def create_app(config_class=None):
             seed_database()
 
     return app
+
+
+def _register_spa_fallback(app):
+    """
+    Serve the built React SPA (frontend/dist/index.html) for every route
+    that isn't an API call or a static file.  This lets React Router handle
+    client-side navigation while Flask handles /api/* requests.
+    """
+    import os
+    from flask import send_from_directory, send_file
+
+    dist_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend', 'dist')
+
+    @app.route('/assets/<path:filename>')
+    def spa_assets(filename):
+        return send_from_directory(os.path.join(dist_dir, 'assets'), filename)
+
+    @app.route('/', defaults={'path': ''})
+    @app.route('/<path:path>')
+    def spa_index(path):
+        # Let /api/* and /static/* fall through to their own handlers
+        if path.startswith('api/') or path.startswith('static/'):
+            from flask import abort
+            abort(404)
+        index = os.path.join(dist_dir, 'index.html')
+        if os.path.exists(index):
+            return send_file(index)
+        # Dev mode: no dist yet — return a helpful message
+        return (
+            '<h2>Frontend not built.</h2>'
+            '<p>Run <code>cd frontend && npm run build</code> first, '
+            'or start the Vite dev server on port 5173.</p>',
+            200
+        )
+
+    # Disable strict slashes so /trips and /trips/ both hit the SPA
+    app.url_map.strict_slashes = False
 

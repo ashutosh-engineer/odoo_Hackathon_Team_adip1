@@ -9,7 +9,7 @@ from backend.models.city import City
 from backend.models.activity import Activity
 from backend.models.itinerary import Stop, StopActivity
 from backend.models.packing import PackingItem, TripNote
-from backend.forms import LoginForm, RegistrationForm, TripForm, ProfileUpdateForm, ChangePasswordForm
+from backend.forms import ProfileUpdateForm, ChangePasswordForm
 from backend.security import admin_required
 from backend.helpers import paginate_query
 import secrets
@@ -36,49 +36,60 @@ def success_response(data=None, message='Success'):
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
-    form = LoginForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(email=form.email.data.lower()).first()
-        if user and user.check_password(form.password.data):
-            login_user(user, remember=form.remember.data)
-            return success_response({
-                'id': user.id,
-                'name': user.name,
-                'email': user.email,
-                'initials': user.initials
-            }, 'Logged in successfully.')
+    """Authenticate with email + password sent as JSON."""
+    data = request.get_json(silent=True) or {}
+    email    = (data.get('email') or '').strip().lower()
+    password = data.get('password') or ''
+
+    if not email or not password:
+        return error_response('Email and password are required.')
+
+    user = User.query.filter_by(email=email).first()
+    if not user or not user.check_password(password):
         return error_response('Invalid email or password.', 401)
-    
-    # Return first validation error if any
-    if form.errors:
-        first_error = next(iter(form.errors.values()))[0]
-        return error_response(first_error)
-        
-    return error_response('Invalid request.')
+
+    login_user(user, remember=True)
+    return success_response({
+        'id':       user.id,
+        'name':     user.name,
+        'email':    user.email,
+        'initials': user.initials,
+    }, 'Logged in successfully.')
 
 
 @api_bp.route('/auth/signup', methods=['POST'])
 def api_signup():
-    form = RegistrationForm()
-    if form.validate_on_submit():
-        user = User(name=form.name.data, email=form.email.data.lower())
-        user.set_password(form.password.data)
-        db.session.add(user)
-        db.session.commit()
-        login_user(user, remember=True)
+    """Create a new account from JSON payload."""
+    data             = request.get_json(silent=True) or {}
+    name             = (data.get('name') or '').strip()
+    email            = (data.get('email') or '').strip().lower()
+    password         = data.get('password') or ''
+    confirm_password = data.get('confirm_password') or ''
 
-        return success_response({
-            'id': user.id,
-            'name': user.name,
-            'email': user.email,
-            'initials': user.initials
-        }, 'Account created.')
+    if not name or len(name) < 2:
+        return error_response('Name must be at least 2 characters.')
+    if not email or '@' not in email:
+        return error_response('A valid email address is required.')
+    if not password or len(password) < 6:
+        return error_response('Password must be at least 6 characters.')
+    if password != confirm_password:
+        return error_response('Passwords do not match.')
 
-    if form.errors:
-        first_error = next(iter(form.errors.values()))[0]
-        return error_response(first_error)
+    if User.query.filter_by(email=email).first():
+        return error_response('An account with this email already exists.')
 
-    return error_response('Invalid request.')
+    user = User(name=name, email=email)
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    login_user(user, remember=True)
+
+    return success_response({
+        'id':       user.id,
+        'name':     user.name,
+        'email':    user.email,
+        'initials': user.initials,
+    }, 'Account created.')
 
 
 @api_bp.route('/auth/logout', methods=['POST'])
@@ -680,46 +691,75 @@ def api_unlock_stop(trip_id, stop_id):
 @login_required
 def api_budget_health(trip_id):
     """
-    Return the cached Budget Health report, or trigger a Celery task to
-    compute it and return a 202 Accepted while it runs.
+    Budget Health with the same three-tier pattern as PDF:
+
+    Tier 1: Redis cache hit → return immediately
+    Tier 2: Celery available + Redis up → dispatch task, return 202
+    Tier 3: No Celery/Redis → compute synchronously, return 200
     """
     Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    import redis as redis_lib, json, os
-    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    r = redis_lib.from_url(redis_url, decode_responses=True)
-    cached = r.get(f'budget_health:{trip_id}')
+    import json, os
 
-    if cached:
-        return jsonify({'status': 'ready', 'report': json.loads(cached)})
+    def get_redis():
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(
+                os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+                decode_responses=True, socket_connect_timeout=1
+            )
+            r.ping()
+            return r
+        except Exception:
+            return None
 
-    # Not cached — kick off Celery task and return 202
-    try:
-        from backend.tasks import calculate_budget_health
-        calculate_budget_health.delay(trip_id)
-    except Exception:
-        # Celery not running — compute synchronously as fallback
-        from backend.models.trip import TripExpense
-        from backend.services.budget_health import calculate
-        trip = Trip.query.get(trip_id)
-        expenses = TripExpense.query.filter_by(trip_id=trip_id).all()
-        stops = trip.stops.all()
-        activity_cost = sum(
-            sa.activity.cost for stop in stops
-            for sa in stop.activities.all() if sa.activity
-        )
-        report = calculate(trip, expenses, activity_cost)
-        result = {
-            'score': report.score, 'band': report.band,
-            'estimated_total': report.estimated_total,
-            'budget_limit': report.budget_limit,
-            'daily_rate': report.daily_rate,
-            'recommended_daily': report.recommended_daily,
-            'anomalies': report.anomalies, 'tips': report.tips,
-        }
-        return jsonify({'status': 'ready', 'report': result})
+    r = get_redis()
 
-    return jsonify({'status': 'computing'}), 202
+    # Tier 1: cached
+    if r:
+        cached = r.get(f'budget_health:{trip_id}')
+        if cached:
+            return jsonify({'status': 'ready', 'report': json.loads(cached)})
+
+    # Tier 2: Celery + Redis available AND a worker is alive
+    celery_dispatched = False
+    if r:
+        try:
+            from backend.tasks import calculate_budget_health
+            from backend.celery_worker import celery_app as _celery
+            workers = _celery.control.ping(timeout=0.5)
+            if workers:  # at least one worker responded
+                calculate_budget_health.delay(trip_id)
+                celery_dispatched = True
+        except Exception:
+            pass
+
+    if celery_dispatched:
+        return jsonify({'status': 'computing'}), 202
+
+    # Tier 3: synchronous fallback
+    from backend.models.trip import TripExpense
+    from backend.services.budget_health import calculate
+    trip = Trip.query.get(trip_id)
+    expenses = TripExpense.query.filter_by(trip_id=trip_id).all()
+    stops = trip.stops.all()
+    activity_cost = sum(
+        sa.activity.cost for stop in stops
+        for sa in stop.activities.all() if sa.activity
+    )
+    report = calculate(trip, expenses, activity_cost)
+    result = {
+        'score': report.score, 'band': report.band,
+        'estimated_total': report.estimated_total,
+        'budget_limit': report.budget_limit,
+        'daily_rate': report.daily_rate,
+        'recommended_daily': report.recommended_daily,
+        'anomalies': report.anomalies, 'tips': report.tips,
+    }
+    # Cache if Redis came back up
+    if r:
+        r.setex(f'budget_health:{trip_id}', 300, json.dumps(result))
+    return jsonify({'status': 'ready', 'report': result})
 
 
 @api_bp.route('/trips/<int:trip_id>/budget/health/refresh', methods=['POST'])
@@ -829,52 +869,123 @@ def api_magic_fill(trip_id, stop_id):
 @login_required
 def api_request_pdf(trip_id):
     """
-    Kick off PDF generation via Celery (or synchronously as fallback).
-    Returns 202 while generating, or 200 with { status: 'ready' } if cached.
+    PDF generation with three tiers:
+
+    Tier 1 (production + Celery running):
+      → Celery worker generates async, result cached in Redis 10 min
+      → Returns 202 immediately; frontend polls until ready
+
+    Tier 2 (production, no Celery / Redis available):
+      → Generate synchronously in the request thread
+      → Cache in Redis if available, else in-process dict
+      → Returns 200 { status: 'ready' } immediately
+
+    Tier 3 (already cached):
+      → Returns 200 { status: 'ready' } immediately from cache
+
+    This design means the app works in every environment while the
+    scalable Celery path is always preferred when workers are running.
     """
-    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    import redis as redis_lib, os
+    import os
+    from backend.services.pdf_export import generate_trip_pdf
+
     redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    r = redis_lib.from_url(redis_url, decode_responses=False)
 
-    if r.exists(f'pdf:{trip_id}'):
+    # ── Helper: get Redis connection (None if unavailable) ──
+    def get_redis():
+        try:
+            import redis as redis_lib
+            r = redis_lib.from_url(redis_url, decode_responses=False,
+                                   socket_connect_timeout=1)
+            r.ping()
+            return r
+        except Exception:
+            return None
+
+    r = get_redis()
+
+    # ── Tier 3: already cached ──
+    if r and r.exists(f'pdf:{trip_id}'):
+        return jsonify({'status': 'ready'})
+    if not r and getattr(api_bp, '_pdf_cache', {}).get(trip_id):
         return jsonify({'status': 'ready'})
 
-    try:
-        from backend.tasks import generate_trip_pdf_task
-        generate_trip_pdf_task.delay(trip_id)
+    # ── Tier 1: Celery + Redis + live worker → async (production) ──
+    celery_dispatched = False
+    if r:
+        try:
+            from backend.tasks import generate_trip_pdf_task
+            from backend.celery_worker import celery_app as _celery
+            workers = _celery.control.ping(timeout=0.5)
+            if workers:
+                generate_trip_pdf_task.delay(trip_id)
+                celery_dispatched = True
+        except Exception:
+            celery_dispatched = False
+
+    if celery_dispatched:
+        # Worker will cache result; frontend polls every 2 s
         return jsonify({'status': 'generating'}), 202
-    except Exception:
-        # Celery not running — generate synchronously
-        from backend.models.trip import Trip as TripModel
-        from backend.services.pdf_export import generate_trip_pdf
-        trip = TripModel.query.get(trip_id)
-        stops = trip.stops.all()
-        pdf_bytes = generate_trip_pdf(trip, stops)
-        if pdf_bytes:
-            r.setex(f'pdf:{trip_id}', 600, pdf_bytes)
-            return jsonify({'status': 'ready'})
-        return error_response('PDF generation requires ReportLab. Install it with: pip install reportlab', 503)
+
+    # ── Tier 2: synchronous fallback (dev / no Celery worker) ──
+    stops = trip.stops.all()
+    pdf_bytes = generate_trip_pdf(trip, stops)
+
+    if not pdf_bytes:
+        return error_response(
+            'PDF generation failed. Ensure ReportLab is installed: pip install reportlab',
+            503
+        )
+
+    # Cache result
+    if r:
+        r.setex(f'pdf:{trip_id}', 600, pdf_bytes)
+    else:
+        if not hasattr(api_bp, '_pdf_cache'):
+            api_bp._pdf_cache = {}
+        api_bp._pdf_cache[trip_id] = pdf_bytes
+
+    return jsonify({'status': 'ready'})
 
 
 @api_bp.route('/trips/<int:trip_id>/export/pdf/download')
 @login_required
 def api_download_pdf(trip_id):
     """
-    Stream the cached PDF bytes to the browser as a file download.
-    Returns 404 if not yet generated (client should call POST first).
+    Stream the cached PDF to the browser.
+    Checks Redis first (production), then in-process cache (dev),
+    then generates on-the-fly as last resort.
     """
     from flask import Response
     trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    import redis as redis_lib, os
-    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
-    r = redis_lib.from_url(redis_url, decode_responses=False)
-    pdf_bytes = r.get(f'pdf:{trip_id}')
+    import os
+    pdf_bytes = None
+
+    # 1. Redis cache (production path)
+    try:
+        import redis as redis_lib
+        r = redis_lib.from_url(
+            os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+            decode_responses=False, socket_connect_timeout=1
+        )
+        pdf_bytes = r.get(f'pdf:{trip_id}')
+    except Exception:
+        pass
+
+    # 2. In-process cache (dev / no Redis)
+    if not pdf_bytes:
+        pdf_bytes = getattr(api_bp, '_pdf_cache', {}).get(trip_id)
+
+    # 3. Generate on-the-fly (last resort — e.g. cache expired)
+    if not pdf_bytes:
+        from backend.services.pdf_export import generate_trip_pdf
+        pdf_bytes = generate_trip_pdf(trip, trip.stops.all())
 
     if not pdf_bytes:
-        return error_response('PDF not ready. POST to /export/pdf first.', 404)
+        return error_response('PDF not available. Click "Download PDF" to generate it.', 404)
 
     safe_name = trip.name.replace(' ', '_').replace('/', '-')[:50]
     return Response(
