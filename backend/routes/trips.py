@@ -21,6 +21,7 @@ from werkzeug.utils import secure_filename
 from backend.models import db
 from backend.models.trip import Trip
 from backend.models.city import City
+from backend.helpers import get_form_value, parse_optional_date
 
 trips_bp = Blueprint('trips', __name__)
 
@@ -64,20 +65,19 @@ def create():
     can immediately start adding stops.
     """
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        description = request.form.get('description', '').strip()
-        start_date = request.form.get('start_date') or None
-        end_date = request.form.get('end_date') or None
+        name = get_form_value('name')
+        description = get_form_value('description')
+        start_date = get_form_value('start_date') or None
+        end_date = get_form_value('end_date') or None
 
         if not name:
             flash('Trip name is required.', 'error')
             return render_template('trips/create.html')
 
         # Parse date strings to date objects
-        from datetime import date
         try:
-            start = date.fromisoformat(start_date) if start_date else None
-            end = date.fromisoformat(end_date) if end_date else None
+            start = parse_optional_date(start_date)
+            end = parse_optional_date(end_date)
         except ValueError:
             flash('Invalid date format.', 'error')
             return render_template('trips/create.html')
@@ -130,16 +130,15 @@ def edit(trip_id):
     trip = get_user_trip_or_404(trip_id)
 
     if request.method == 'POST':
-        trip.name = request.form.get('name', trip.name).strip()
-        trip.description = request.form.get('description', '').strip()
+        trip.name = get_form_value('name', trip.name)
+        trip.description = get_form_value('description')
 
-        start_date = request.form.get('start_date') or None
-        end_date = request.form.get('end_date') or None
+        start_date = get_form_value('start_date') or None
+        end_date = get_form_value('end_date') or None
 
-        from datetime import date
         try:
-            trip.start_date = date.fromisoformat(start_date) if start_date else None
-            trip.end_date = date.fromisoformat(end_date) if end_date else None
+            trip.start_date = parse_optional_date(start_date)
+            trip.end_date = parse_optional_date(end_date)
         except ValueError:
             flash('Invalid date format.', 'error')
             return render_template('trips/create.html', trip=trip, editing=True)

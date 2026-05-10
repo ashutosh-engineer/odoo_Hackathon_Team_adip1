@@ -8,6 +8,10 @@ __pycache__/
 dist/
 build/
 *.egg
+.pytest_cache/
+.coverage
+htmlcov/
+*.log
 
 # Virtual environment
 venv/
@@ -16,9 +20,12 @@ env/
 
 # Database (local SQLite — not committed)
 *.db
+Database/*.db
 
 # Environment variables
 .env
+.env.*
+!.env.example
 
 # IDE
 .vscode/
@@ -30,6 +37,13 @@ env/
 .DS_Store
 Thumbs.db
 
+# Local workflow notes
+workflow_checklist.md
+
 # Uploads (user-generated content)
 frontend/static/uploads/*
 !frontend/static/uploads/.gitkeep
+
+# Frontend build output and dependencies
+frontend/dist/
+node_modules/

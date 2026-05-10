@@ -15,6 +15,7 @@ from flask_login import login_required, current_user
 from backend.models import db
 from backend.models.trip import Trip
 from backend.models.packing import PackingItem
+from backend.helpers import get_form_value
 
 packing_bp = Blueprint('packing', __name__)
 
@@ -60,8 +61,8 @@ def add_item(trip_id):
     """Add a new item to the packing list."""
     trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    name = request.form.get('name', '').strip()
-    category = request.form.get('category', 'other').strip()
+    name = get_form_value('name')
+    category = get_form_value('category', 'other')
 
     if not name:
         if request.is_json:

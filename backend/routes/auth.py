@@ -5,9 +5,8 @@ Handles user registration, login, and logout.
 
 Security approach:
 - Passwords hashed via Werkzeug's scrypt (default in modern versions)
-- CSRF tokens on all forms via Flask-WTF
 - Session-based auth (server-side, not JWT) — simpler and more secure for
-  server-rendered apps since tokens aren't exposed to JavaScript
+    server-rendered apps since tokens aren't exposed to JavaScript
 - Email uniqueness enforced at DB level (unique constraint)
 """
 
@@ -15,6 +14,8 @@ from flask import Blueprint, render_template, redirect, url_for, flash, request
 from flask_login import login_user, logout_user, login_required, current_user
 from backend.models import db
 from backend.models.user import User
+from backend.helpers import get_form_value
+from backend.security import is_safe_redirect_target
 
 auth_bp = Blueprint('auth', __name__)
 
@@ -30,8 +31,8 @@ def login():
         return redirect(url_for('dashboard.home'))
 
     if request.method == 'POST':
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
+        email = get_form_value('email').lower()
+        password = get_form_value('password', strip=False)
 
         # Look up user by email — indexed column, fast lookup
         user = User.query.filter_by(email=email).first()
@@ -41,6 +42,8 @@ def login():
             login_user(user, remember=True)
             # Redirect to the page they originally wanted, or dashboard
             next_page = request.args.get('next')
+            if not is_safe_redirect_target(next_page):
+                next_page = None
             return redirect(next_page or url_for('dashboard.home'))
 
         # Intentionally vague error — don't reveal if email exists
@@ -59,10 +62,10 @@ def signup():
         return redirect(url_for('dashboard.home'))
 
     if request.method == 'POST':
-        name = request.form.get('name', '').strip()
-        email = request.form.get('email', '').strip().lower()
-        password = request.form.get('password', '')
-        confirm = request.form.get('confirm_password', '')
+        name = get_form_value('name')
+        email = get_form_value('email').lower()
+        password = get_form_value('password', strip=False)
+        confirm = get_form_value('confirm_password', strip=False)
 
         # Server-side validation — never trust the client
         errors = []

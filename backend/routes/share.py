@@ -17,6 +17,7 @@ from flask import Blueprint, render_template, redirect, url_for, flash, jsonify,
 from flask_login import login_required, current_user
 from backend.models import db
 from backend.models.trip import Trip
+from backend.helpers import get_owned_trip_or_404
 
 share_bp = Blueprint('share', __name__)
 
@@ -25,7 +26,7 @@ share_bp = Blueprint('share', __name__)
 @login_required
 def generate_link(trip_id):
     """Generate a shareable link for a trip."""
-    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    trip = get_owned_trip_or_404(trip_id, current_user.id)
 
     token = trip.generate_share_token()
     db.session.commit()
@@ -43,7 +44,7 @@ def generate_link(trip_id):
 @login_required
 def revoke_link(trip_id):
     """Revoke public access to a shared trip."""
-    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    trip = get_owned_trip_or_404(trip_id, current_user.id)
 
     trip.is_public = False
     trip.share_token = None

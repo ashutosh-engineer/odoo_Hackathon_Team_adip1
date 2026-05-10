@@ -16,6 +16,7 @@ from flask_login import login_required, current_user
 from backend.models import db
 from backend.models.trip import Trip, TripExpense
 from backend.models.itinerary import Stop, StopActivity
+from backend.helpers import get_form_value
 
 budget_bp = Blueprint('budget', __name__)
 
@@ -68,8 +69,8 @@ def add_expense(trip_id):
     """Add a manual expense entry to the trip budget."""
     trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    category = request.form.get('category', 'other').strip()
-    description = request.form.get('description', '').strip()
+    category = get_form_value('category', 'other')
+    description = get_form_value('description')
     amount = request.form.get('amount', type=float)
 
     if not amount or amount <= 0:

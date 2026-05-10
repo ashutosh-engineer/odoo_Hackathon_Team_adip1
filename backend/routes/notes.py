@@ -11,6 +11,7 @@ from backend.models import db
 from backend.models.trip import Trip
 from backend.models.packing import TripNote
 from backend.models.itinerary import Stop
+from backend.helpers import get_form_value, parse_optional_int
 
 notes_bp = Blueprint('notes', __name__)
 
@@ -45,8 +46,8 @@ def add_note(trip_id):
     """Create a new note, optionally tied to a specific stop."""
     trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
 
-    content = request.form.get('content', '').strip()
-    stop_id = request.form.get('stop_id', type=int)
+    content = get_form_value('content')
+    stop_id = parse_optional_int(request.form.get('stop_id'))
 
     if not content:
         flash('Note content cannot be empty.', 'error')
@@ -78,7 +79,7 @@ def edit_note(trip_id, note_id):
     Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
     note = TripNote.query.filter_by(id=note_id, trip_id=trip_id).first_or_404()
 
-    content = request.form.get('content', '').strip()
+    content = get_form_value('content')
     if not content:
         flash('Note content cannot be empty.', 'error')
         return redirect(url_for('notes.journal', trip_id=trip_id))

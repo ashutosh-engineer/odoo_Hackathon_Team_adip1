@@ -10,6 +10,9 @@ from flask_login import login_required, current_user, logout_user
 from backend.models import db
 from backend.models.user import User
 from backend.models.city import City
+from backend.models.itinerary import Stop
+from backend.models.trip import Trip
+from backend.helpers import get_form_value
 
 profile_bp = Blueprint('profile', __name__)
 
@@ -19,9 +22,6 @@ profile_bp = Blueprint('profile', __name__)
 def settings():
     """Render the profile/settings page with current user data."""
     # Saved destinations — cities the user has visited (from their trips)
-    from models.itinerary import Stop
-    from models.trip import Trip
-
     visited_city_ids = (
         db.session.query(Stop.city_id)
         .join(Trip, Stop.trip_id == Trip.id)
@@ -41,8 +41,8 @@ def settings():
 @login_required
 def update():
     """Update profile information (name, email)."""
-    name = request.form.get('name', '').strip()
-    email = request.form.get('email', '').strip().lower()
+    name = get_form_value('name')
+    email = get_form_value('email').lower()
 
     errors = []
     if not name or len(name) < 2:
@@ -72,9 +72,9 @@ def update():
 @login_required
 def change_password():
     """Change password — requires current password for verification."""
-    current_pw = request.form.get('current_password', '')
-    new_pw = request.form.get('new_password', '')
-    confirm_pw = request.form.get('confirm_password', '')
+    current_pw = get_form_value('current_password', strip=False)
+    new_pw = get_form_value('new_password', strip=False)
+    confirm_pw = get_form_value('confirm_password', strip=False)
 
     if not current_user.check_password(current_pw):
         flash('Current password is incorrect.', 'error')
@@ -102,7 +102,7 @@ def delete_account():
     Permanently delete the user account and all associated data.
     Requires password confirmation as a safety measure.
     """
-    password = request.form.get('password', '')
+    password = get_form_value('password', strip=False)
 
     if not current_user.check_password(password):
         flash('Incorrect password. Account not deleted.', 'error')
