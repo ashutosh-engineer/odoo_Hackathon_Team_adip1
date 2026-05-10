@@ -9,6 +9,8 @@ from backend.models.city import City
 from backend.models.activity import Activity
 from backend.models.itinerary import Stop, StopActivity
 from backend.models.packing import PackingItem, TripNote
+from backend.forms import LoginForm, RegistrationForm, TripForm, ProfileUpdateForm, ChangePasswordForm
+from backend.security import admin_required
 import secrets
 from datetime import date
 
@@ -33,62 +35,49 @@ def success_response(data=None, message='Success'):
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
-    data = request.get_json() or {}
-    email = data.get('email', '').strip().lower()
-    password = data.get('password', '')
-
-    if not email or not password:
-        return error_response('Email and password are required.')
-
-    user = User.query.filter_by(email=email).first()
-    if not user or not user.check_password(password):
+    form = LoginForm()
+    if form.validate_on_submit():
+        user = User.query.filter_by(email=form.email.data.lower()).first()
+        if user and user.check_password(form.password.data):
+            login_user(user, remember=form.remember.data)
+            return success_response({
+                'id': user.id,
+                'name': user.name,
+                'email': user.email,
+                'initials': user.initials
+            }, 'Logged in successfully.')
         return error_response('Invalid email or password.', 401)
-
-    login_user(user, remember=True)
-    return success_response({
-        'id': user.id,
-        'name': user.name,
-        'email': user.email,
-        'initials': user.initials
-    }, 'Logged in successfully.')
+    
+    # Return first validation error if any
+    if form.errors:
+        first_error = next(iter(form.errors.values()))[0]
+        return error_response(first_error)
+        
+    return error_response('Invalid request.')
 
 
 @api_bp.route('/auth/signup', methods=['POST'])
 def api_signup():
-    data = request.get_json() or {}
-    name = data.get('name', '').strip()
-    email = data.get('email', '').strip().lower()
-    password = data.get('password', '')
-    confirm = data.get('confirm_password', '')
+    form = RegistrationForm()
+    if form.validate_on_submit():
+        user = User(name=form.name.data, email=form.email.data.lower())
+        user.set_password(form.password.data)
+        db.session.add(user)
+        db.session.commit()
+        login_user(user, remember=True)
 
-                
-    errors = []
-    if not name or len(name) < 2:
-        errors.append('Name must be at least 2 characters.')
-    if not email or '@' not in email:
-        errors.append('Valid email is required.')
-    if len(password) < 6:
-        errors.append('Password must be at least 6 characters.')
-    if password != confirm:
-        errors.append('Passwords do not match.')
-    if User.query.filter_by(email=email).first():
-        errors.append('Email already in use.')
+        return success_response({
+            'id': user.id,
+            'name': user.name,
+            'email': user.email,
+            'initials': user.initials
+        }, 'Account created.')
 
-    if errors:
-        return error_response(errors[0])
+    if form.errors:
+        first_error = next(iter(form.errors.values()))[0]
+        return error_response(first_error)
 
-    user = User(name=name, email=email)
-    user.set_password(password)
-    db.session.add(user)
-    db.session.commit()
-    login_user(user, remember=True)
-
-    return success_response({
-        'id': user.id,
-        'name': user.name,
-        'email': user.email,
-        'initials': user.initials
-    }, 'Account created.')
+    return error_response('Invalid request.')
 
 
 @api_bp.route('/auth/logout', methods=['POST'])

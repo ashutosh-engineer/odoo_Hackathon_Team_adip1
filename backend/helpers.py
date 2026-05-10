@@ -5,22 +5,23 @@ Shared request-validation, pagination, and ownership helpers used by
 multiple blueprints.
 """
 
+import bleach
 from datetime import date
 
 from flask import flash, redirect, request, url_for
 
 from backend.models import db
-from backend.models.trip import Trip, TripExpense
-from backend.models.itinerary import Stop
-from backend.models.packing import PackingItem, TripNote
-
+# ... existing code ...
 
 def get_form_value(name, default='', strip=True):
-    """Read a form value with consistent trimming semantics."""
+    """Read and sanitize a form value."""
     value = request.form.get(name, default)
     if value is None:
         return default
-    return value.strip() if strip and isinstance(value, str) else value
+    if isinstance(value, str):
+        value = value.strip() if strip else value
+        return bleach.clean(value)
+    return value
 
 
 def get_json_or_form_value(name, default=None):

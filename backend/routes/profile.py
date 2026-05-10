@@ -12,7 +12,7 @@ from backend.models.user import User
 from backend.models.city import City
 from backend.models.itinerary import Stop
 from backend.models.trip import Trip
-from backend.helpers import get_form_value
+from backend.forms import ProfileUpdateForm, ChangePasswordForm
 
 profile_bp = Blueprint('profile', __name__)
 
@@ -20,8 +20,6 @@ profile_bp = Blueprint('profile', __name__)
 @profile_bp.route('/')
 @login_required
 def settings():
-    """Render the profile/settings page with current user data."""
-    # Saved destinations — cities the user has visited (from their trips)
     visited_city_ids = (
         db.session.query(Stop.city_id)
         .join(Trip, Stop.trip_id == Trip.id)
@@ -31,67 +29,55 @@ def settings():
     )
     visited_cities = City.query.filter(City.id.in_([c[0] for c in visited_city_ids])).all()
 
+    profile_form = ProfileUpdateForm(obj=current_user)
+    password_form = ChangePasswordForm()
+
     return render_template(
         'profile/settings.html',
-        visited_cities=visited_cities
+        visited_cities=visited_cities,
+        profile_form=profile_form,
+        password_form=password_form
     )
 
 
 @profile_bp.route('/update', methods=['POST'])
 @login_required
 def update():
-    """Update profile information (name, email)."""
-    name = get_form_value('name')
-    email = get_form_value('email').lower()
+    form = ProfileUpdateForm()
+    if form.validate_on_submit():
+        # Check if email is taken by another user
+        existing = User.query.filter(User.email == form.email.data.lower(), User.id != current_user.id).first()
+        if existing:
+            flash('This email is already in use.', 'error')
+            return redirect(url_for('profile.settings'))
 
-    errors = []
-    if not name or len(name) < 2:
-        errors.append('Name must be at least 2 characters.')
-    if not email or '@' not in email:
-        errors.append('Please enter a valid email.')
+        current_user.name = form.name.data
+        current_user.email = form.email.data.lower()
+        db.session.commit()
+        flash('Profile updated.', 'success')
+    else:
+        for error in form.errors.values():
+            flash(error[0], 'error')
 
-    # Check if email is taken by another user
-    existing = User.query.filter(User.email == email, User.id != current_user.id).first()
-    if existing:
-        errors.append('This email is already in use.')
-
-    if errors:
-        for err in errors:
-            flash(err, 'error')
-        return redirect(url_for('profile.settings'))
-
-    current_user.name = name
-    current_user.email = email
-    db.session.commit()
-
-    flash('Profile updated.', 'success')
     return redirect(url_for('profile.settings'))
 
 
 @profile_bp.route('/change-password', methods=['POST'])
 @login_required
 def change_password():
-    """Change password — requires current password for verification."""
-    current_pw = get_form_value('current_password', strip=False)
-    new_pw = get_form_value('new_password', strip=False)
-    confirm_pw = get_form_value('confirm_password', strip=False)
+    form = ChangePasswordForm()
+    if form.validate_on_submit():
+        if not current_user.check_password(form.old_password.data):
+            flash('Current password is incorrect.', 'error')
+            return redirect(url_for('profile.settings'))
 
-    if not current_user.check_password(current_pw):
-        flash('Current password is incorrect.', 'error')
-        return redirect(url_for('profile.settings'))
+        current_user.set_password(form.new_password.data)
+        db.session.commit()
+        flash('Password changed successfully.', 'success')
+    else:
+        for error in form.errors.values():
+            flash(error[0], 'error')
 
-    if len(new_pw) < 6:
-        flash('New password must be at least 6 characters.', 'error')
-        return redirect(url_for('profile.settings'))
-
-    if new_pw != confirm_pw:
-        flash('New passwords do not match.', 'error')
-        return redirect(url_for('profile.settings'))
-
-    current_user.set_password(new_pw)
-    db.session.commit()
-
-    flash('Password changed successfully.', 'success')
     return redirect(url_for('profile.settings'))
 
 
