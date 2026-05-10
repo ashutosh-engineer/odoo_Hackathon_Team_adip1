@@ -281,28 +281,35 @@ Vulnerabilities prevented:
 
 ## 10. Scalability
 
-Current capacity:
+Target scale:
 
-- Good for local development, demos, and small team usage.
-- The current relational model is efficient for trip-scoped reads and writes.
+- Designed to scale horizontally toward very high concurrency, including a 1-million-user class deployment when backed by proper infrastructure.
+- Optimized for trip-scoped reads and writes, where most requests stay small and isolated to a single user or trip.
 
-Growth strategy:
+Production scaling plan:
 
-- Move from SQLite to PostgreSQL for production concurrency.
-- Add pagination on large list views.
-- Introduce caching for read-heavy catalog pages such as cities and activities.
-- Extract long-running work like analytics or notifications into background jobs if needed.
+- Replace SQLite with PostgreSQL or a managed equivalent as the primary transactional datastore.
+- Run the Flask app behind a load balancer with multiple stateless application instances.
+- Move sessions, rate limiting state, and hot cache data into Redis or an equivalent distributed cache.
+- Use background workers for notifications, exports, image processing, reminders, and any non-request work.
+- Add read replicas for catalog-heavy or analytics-heavy queries.
+- Use pagination, filtering, and projection queries on every list page to keep response payloads predictable.
+- Store uploads and static assets in object storage and serve them through a CDN.
+- Add queue-based processing for expensive or bursty actions so user requests stay fast under load.
 
-Caching possibilities:
+High-volume caching targets:
 
-- Popular destinations list
-- Seeded city catalog
-- Public share page metadata
+- City and activity catalogs
+- Public share metadata
+- Dashboard aggregates and counters
+- Frequently requested trip summaries
 
-Trade-offs:
+Operational trade-offs:
 
-- Keeping the app server-rendered simplifies operations, but some highly interactive flows would benefit from background processing later.
-- Dynamic relationships keep the code readable, but very large datasets may need pagination or projection queries.
+- Stateless app servers improve horizontal scaling, but they require shared session and cache infrastructure.
+- Stronger consistency through a relational database is more expensive than eventual-consistency systems, but it fits the ownership-heavy trip workflow.
+- More aggressive caching improves throughput, but cache invalidation must be deliberate for trip edits, sharing changes, and budget updates.
+- Supporting 1M concurrent users is an infrastructure problem as much as a code problem, so the application is structured to make that transition possible without a rewrite.
 
 ## 11. Logging & Debugging
 
