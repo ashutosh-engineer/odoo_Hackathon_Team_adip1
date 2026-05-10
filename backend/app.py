@@ -8,22 +8,16 @@ and applies security and initialization hooks.
 import logging
 import os
 from flask import Flask
-from flask_wtf import CSRFProtect
-from flask_session import Session
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
 from backend.config import get_config_class
 from backend.models import db, login_manager
+from backend.extensions import csrf, session_handler, limiter
 from backend.routes import register_routes
 from backend.seed import seed_database
 from backend.security import register_error_handlers, register_security
 
 FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'frontend')
 TEMPLATE_DIR = os.path.join(FRONTEND_DIR, 'templates')
-STATIC_DIR = os.path.join(FRONTEND_DIR, 'static')
-csrf = CSRFProtect()
-session_handler = Session()
-limiter = Limiter(key_func=get_remote_address, default_limits=["200 per day", "50 per hour"])
+STATIC_DIR   = os.path.join(FRONTEND_DIR, 'static')
 
 
 def _configure_logging(app):

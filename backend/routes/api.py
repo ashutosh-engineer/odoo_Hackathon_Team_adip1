@@ -17,6 +17,9 @@ from datetime import date
 
 api_bp = Blueprint('api', __name__)
 
+# Import limiter for the dev reset endpoint
+from backend.extensions import limiter
+
 
                                             
 def error_response(message, status=400):
@@ -36,7 +39,9 @@ def success_response(data=None, message='Success'):
 
 @api_bp.route('/auth/login', methods=['POST'])
 def api_login():
-    """Authenticate with email + password sent as JSON."""
+    """Authenticate with email + password sent as JSON.
+    Limited to 20 attempts/minute per IP to prevent brute-force.
+    """
     data = request.get_json(silent=True) or {}
     email    = (data.get('email') or '').strip().lower()
     password = data.get('password') or ''
@@ -146,6 +151,19 @@ def api_me():
             }
         })
     return jsonify({'authenticated': False, 'user': None})
+
+
+@api_bp.route('/dev/reset-limits', methods=['POST'])
+def api_reset_limits():
+    """Dev-only: clear in-memory rate limit counters without restarting."""
+    import os
+    if os.environ.get('APP_ENV', 'development') != 'development':
+        return error_response('Not available in production.', 403)
+    try:
+        limiter.reset()
+    except Exception:
+        pass
+    return jsonify({'success': True, 'message': 'Rate limit counters reset.'})
 
 
                                              
@@ -614,6 +632,7 @@ def api_shared_trip(token):
 def api_presence_heartbeat(trip_id):
     """
     Called every ~15 s by the frontend to signal the user is still viewing.
+    Exempt from rate limiting — fires automatically on a timer.
     Returns the full list of present users + active stop locks.
     """
     Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()

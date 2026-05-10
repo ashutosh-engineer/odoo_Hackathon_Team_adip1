@@ -10,214 +10,315 @@
 
 # Traveloop
 
-### *Plan smarter. Travel better.*
+### Plan smarter. Travel better.
 
-**The all-in-one travel planning workspace — itineraries, budgets, packing, real-time collaboration, AI-powered suggestions, and PDF exports, all in one place.**
+The all-in-one travel planning workspace for itineraries, budgets, packing, real-time collaboration, AI-style suggestions, and PDF exports.
 
-[Features](#features) · [Architecture](#architecture) · [Database](#database) · [API](#api) · [Security](#security) · [Scalability](#scalability) · [Setup](#setup) · [Team](#team)
+[Overview](#overview) - [Features](#features) - [Architecture](#architecture) - [Database](#database) - [API](#api) - [Security](#security) - [Scalability](#scalability) - [Setup](#setup) - [Project Structure](#project-structure)
 
 </div>
 
 ---
 
-## What is Traveloop?
+## Overview
 
-Travel planning is broken. Your itinerary lives in a Google Doc, your budget in a spreadsheet, your packing list in a notes app, and your friends suggestions scattered across WhatsApp. Traveloop fixes that.
+Traveloop brings the full trip-planning workflow into one app. Instead of splitting your plan across a document, spreadsheet, notes app, and chat threads, you can create a trip, add stops, schedule activities, track spending, manage packing, write journal notes, and share the result with a single link.
 
-It is a full-stack web application that brings every part of trip planning into one coherent workspace. You create a trip, build your route stop by stop, schedule activities, track spending, manage your packing list, write journal notes, and share the whole thing with a single link — all without leaving the app.
+It is built as a full-stack system: a React frontend talks to a Flask API, data is stored in PostgreSQL, shared state and caches live in Redis, and heavier work such as PDF generation and budget analysis can run in Celery workers.
 
-We built it for the hackathon to demonstrate what a production-grade travel platform looks like when you take infrastructure, security, and user experience seriously from day one. Every feature is wired end-to-end: the React frontend talks to a real Flask API, which writes to PostgreSQL, caches in Redis, and offloads heavy work to Celery workers.
-
----
 ## Features
 
 ### Core Planning Workflow
 
-**Trip Management**
-Create, edit, and delete trips with names, dates, descriptions, and optional cover images. Every trip is a self-contained workspace — all your stops, activities, expenses, notes, and packing items live inside it. Ownership is enforced at every API layer so no user can ever touch another user's data.
+**Trip Management**  
+Create, edit, and delete trips with names, dates, descriptions, and optional cover images. Each trip acts as a self-contained workspace for stops, activities, expenses, notes, and packing items.
 
-**Itinerary Builder**
-Add cities as stops in any order. Expand each stop to browse and schedule local activities from the catalog. The builder shows cost and duration for every activity so you can plan realistically. Stop locking prevents two collaborators from editing the same stop at the same time.
+**Itinerary Builder**  
+Add cities as stops in any order, then expand each stop to browse and schedule local activities from the catalog. Cost and duration are shown for every activity so planning stays realistic, and stop locking prevents two collaborators from editing the same stop at once.
 
-**Budget Tracker**
-Two sources of truth: activity costs pulled automatically from your itinerary, and manual expenses you add yourself (transport, accommodation, food, etc.). See a breakdown by category with visual progress bars and a per-day average. The Smart Budget Health widget gives you a live 0–100 score with anomaly alerts.
+**Budget Tracker**  
+Track both activity costs pulled from the itinerary and manual expenses such as transport, accommodation, and food. The breakdown includes per-category totals, visual progress bars, and a per-day average. The Smart Budget Health widget adds a live score with anomaly alerts.
 
-**Packing Checklist**
-Categorized packing list with one-tap toggle for packed/unpacked status. Progress bar shows how ready you are. Reset all items with one click to reuse the list on your next trip.
+**Packing Checklist**  
+Use a categorized packing list with one-tap packed/unpacked toggles. A progress bar shows how ready you are, and a single reset lets you reuse the list for the next trip.
 
-**Trip Journal**
-Free-form notes tied to a trip or a specific stop. Timestamped entries create a natural journal. Useful for confirmation numbers, local tips, or anything you want to remember.
+**Trip Journal**  
+Add free-form notes tied to a trip or a specific stop. Timestamped entries create a natural journal for confirmation numbers, local tips, and reminders.
 
-**Public Share Links**
-Generate a unique, unguessable URL for any trip. Anyone with the link can view the full itinerary — no account required. Revoke access at any time. Tokens are 256-bit cryptographically random strings.
-
----
+**Public Share Links**  
+Generate a unique, unguessable URL for any trip so anyone with the link can view the itinerary without an account. Access can be revoked at any time.
 
 ### Advanced Features
 
-**1. Collaborative Real-time Presence**
-See who else is viewing the same trip right now. Avatar bubbles appear in the header showing each collaborator's initials and a unique colour. Built on Redis sorted sets with 30-second TTL heartbeats — no WebSocket server required. Works across all app instances because state lives in Redis, not in any single process.
+**Collaborative Real-time Presence**  
+See who else is viewing the same trip through avatar bubbles in the header. Presence is backed by Redis sorted sets with 30-second heartbeats, so it works across all app instances without a WebSocket server.
 
-**2. Stop Locking**
-When you expand a stop to edit it, the system acquires a Redis-backed exclusive lock using `SET NX`. Other users see a red "Locked by [name]" badge and cannot edit that stop simultaneously. Locks expire automatically after 20 seconds of inactivity, preventing deadlocks even if a browser crashes.
+**Stop Locking**  
+When a stop is opened for editing, the app acquires a Redis-backed exclusive lock. Other users see a locked badge and cannot edit that stop until the lock is released or expires automatically after 20 seconds.
 
-**3. Smart Budget Health Score**
-A 0–100 health score with four detection rules: over-budget-limit, projected overspend vs city cost-index benchmarks, daily rate anomaly, and category concentration. Computed by a Celery background task when workers are running, or synchronously as a fallback. Results cached in Redis for 5 minutes. The frontend renders a live SVG ring gauge with anomaly alerts and actionable tips.
+**Smart Budget Health Score**  
+A 0-100 health score is calculated from over-budget checks, projected overspend against city cost-index benchmarks, daily-rate anomalies, and category concentration. The score is cached in Redis and can run synchronously or through Celery depending on worker availability.
 
-**4. AI Magic Fill**
-One button auto-schedules the most popular activities for a stop across your planned days. The backend picks activities ordered by cost (budget-friendly proxy for popularity), distributes them across days, and skips duplicates already scheduled. No external AI API needed — pure database intelligence.
+**AI Magic Fill**  
+One button auto-schedules the most suitable activities for a stop across the planned days. The backend orders activities by cost as a budget-friendly proxy, distributes them across the itinerary, and skips duplicates already scheduled.
 
-**5. PDF Boarding Pass Export**
-Generate a printable PDF of your full itinerary. Uses ReportLab to render a branded document with trip summary, per-stop activity tables, costs, and durations. Three-tier execution: Redis cache hit returns instantly, Celery worker generates async when available, synchronous fallback when no worker is running. The frontend shows a three-state button: idle → generating → download ready.
-
----
-## Features
-
-### Core Planning Workflow
-
-**Trip Management**
-Create, edit, and delete trips with names, dates, descriptions, and optional cover images. Every trip is a self-contained workspace. Ownership is enforced at every API layer so no user can ever touch another user's data.
-
-**Itinerary Builder**
-Add cities as stops in any order. Expand each stop to browse and schedule local activities from the catalog. Stop locking prevents two collaborators from editing the same stop simultaneously.
-
-**Budget Tracker**
-Activity costs pulled automatically from your itinerary plus manual expenses. See a breakdown by category with progress bars and a per-day average. The Smart Budget Health widget gives a live 0-100 score with anomaly alerts.
-
-**Packing Checklist**
-Categorized packing list with one-tap toggle. Progress bar shows readiness. Reset all items to reuse on your next trip.
-
-**Trip Journal**
-Free-form notes tied to a trip or a specific stop. Timestamped entries. Useful for confirmation numbers, local tips, or anything you want to remember.
-
-**Public Share Links**
-Generate a unique, unguessable URL for any trip. Anyone with the link can view the full itinerary without an account. Revoke access at any time. Tokens are 256-bit cryptographically random strings.
-
----
-
-### Advanced Features
-
-**1. Collaborative Real-time Presence**
-See who else is viewing the same trip right now. Avatar bubbles in the header show each collaborator's initials and a unique colour. Built on Redis sorted sets with 30-second TTL heartbeats. Works across all app instances because state lives in Redis, not in any single process.
-
-**2. Stop Locking**
-Expanding a stop acquires a Redis exclusive lock via SET NX. Other users see a red Locked badge. Locks expire after 20 seconds of inactivity, preventing deadlocks even if a browser crashes.
-
-**3. Smart Budget Health Score**
-A 0-100 score with four detection rules: over-budget-limit, projected overspend vs city cost-index benchmarks, daily rate anomaly, and category concentration. Computed by Celery when workers are running, synchronously as fallback. Cached in Redis 5 minutes.
-
-**4. AI Magic Fill**
-One button auto-schedules the most popular activities for a stop across your planned days. Pure database intelligence - no external AI API needed.
-
-**5. PDF Boarding Pass Export**
-Generate a printable PDF using ReportLab. Three-tier execution: Redis cache hit returns instantly, Celery worker generates async when available, synchronous fallback when no worker is running.
-
----
+**PDF Boarding Pass Export**  
+Generate a printable PDF of the full itinerary with trip summary, per-stop activity tables, and costs. The export uses ReportLab and follows a three-tier path: Redis cache hit, Celery async generation, or synchronous fallback.
 
 ## Architecture
 
-The system uses a layered, stateless architecture. Every application instance is identical and shares no local state. All shared state lives in PostgreSQL or Redis, which means you can add or remove app instances at any time without coordination.
+Traveloop uses a layered, stateless architecture. Every app instance is identical, and shared state lives in PostgreSQL or Redis so containers can be added or removed without coordination.
 
-Security and scalability mechanisms are annotated directly in the diagram below.
+```text
+Client Browser
+    React 18 SPA (Vite + React Router)
+    credentials included on API requests
+    401 handler returns users to login when needed
 
-```
-                        ┌──────────────────────────────────────────┐
-                        │           CLIENT BROWSER                 │
-                        │   React 18 SPA  (Vite + React Router)    │
-                        │                                          │
-                        │  [SEC] credentials:'include' on every    │
-                        │        fetch — session cookie sent        │
-                        │  [SEC] 401 handler redirects to /login   │
-                        │        (skipped when already on auth pg) │
-                        │  [SCL] SPA served from Flask /dist —     │
-                        │        no separate static server needed  │
-                        └──────────────────┬───────────────────────┘
-                                           │ HTTPS
-                                           ▼
-                        ┌──────────────────────────────────────────┐
-                        │         NGINX LOAD BALANCER              │
-                        │   Round-robin across app instances       │
-                        │                                          │
-                        │  [SCL] Horizontal scaling — add more     │
-                        │        app containers, zero code change  │
-                        │  [SEC] Terminates TLS, sets HSTS header  │
-                        └────────┬──────────────┬──────────────────┘
-                                 │              │
-                    ┌────────────┘              └────────────┐
-                    ▼                                        ▼
-       ┌────────────────────┐               ┌────────────────────┐
-       │   Flask App 1      │               │   Flask App 2/3    │
-       │   :5001            │  . . . . . .  │   :5002 / :5003    │
-       │                    │               │                    │
-       │  [SEC] Flask-Login │               │  [SCL] Stateless   │
-       │        session     │               │        — any inst  │
-       │        protection  │               │        serves any  │
-       │  [SEC] Bleach XSS  │               │        request     │
-       │        sanitize    │               │  [SEC] Same sec    │
-       │  [SEC] Ownership   │               │        stack on    │
-       │        checks on   │               │        every inst  │
-       │        every route │               │                    │
-       │  [SEC] CSRF tokens │               │                    │
-       │  [SEC] Sec headers │               │                    │
-       │        on every    │               │                    │
-       │        response    │               │                    │
-       └────────┬───────────┘               └────────────────────┘
-                │
-     ┌──────────┴──────────────────────────────────┐
-     │                                             │
-     ▼                                             ▼
-┌──────────────────────────┐      ┌──────────────────────────────────┐
-│     PostgreSQL 16        │      │           Redis 7                │
-│                          │      │                                  │
-│  Primary  (all writes)   │      │  DB 0  sessions (Flask-Session)  │
-│  Replica  (read routes)  │      │  DB 0  presence heartbeats       │
-│                          │      │  DB 0  stop locks  (SET NX TTL)  │
-│  [SEC] Parameterised     │      │  DB 0  budget health cache       │
-│        queries via ORM   │      │  DB 0  PDF cache                 │
-│        — no SQL inject   │      │  DB 1  Celery task broker        │
-│  [SEC] FK constraints    │      │  DB 2  rate-limit counters       │
-│        enforce ownership │      │                                  │
-│  [SCL] Read replica      │      │  [SCL] All instances share one   │
-│        offloads catalog  │      │        Redis — any node can      │
-│        and search routes │      │        serve any session         │
-│  [SCL] Paginated queries │      │  [SEC] TTL on every key —        │
-│        hard-bounded at   │      │        stale locks/sessions      │
-│        50 rows/page      │      │        self-clean automatically  │
-└──────────────────────────┘      └──────────────┬───────────────────┘
-                                                 │
-                                                 ▼
-                                  ┌──────────────────────────────────┐
-                                  │        Celery Workers            │
-                                  │                                  │
-                                  │  calculate_budget_health task    │
-                                  │  generate_trip_pdf_task          │
-                                  │  process_upload_to_s3 task       │
-                                  │  send_trip_reminder task         │
-                                  │                                  │
-                                  │  [SCL] Workers are stateless —   │
-                                  │        scale independently of    │
-                                  │        web tier                  │
-                                  │  [SCL] Three-tier fallback:      │
-                                  │        1. Redis cache hit        │
-                                  │        2. Celery async (prod)    │
-                                  │        3. Sync fallback (dev)    │
-                                  │  [SEC] Tasks run with app        │
-                                  │        context — same ownership  │
-                                  │        checks as web routes      │
-                                  └──────────────────────────────────┘
+Nginx
+    TLS termination and load balancing
+    round-robin across Flask instances
+
+Flask App Instances
+    Flask-Login session protection
+    ownership checks on every trip-scoped route
+    Bleach sanitization for free-text input
+    CSRF protection and security headers
+
+PostgreSQL
+    primary data store for trips, stops, cities, activities, notes, packing, and expenses
+
+Redis
+    sessions, presence, locks, rate limiting, and caches
+
+Celery Workers
+    budget health calculation, PDF generation, uploads, reminders
 ```
 
-### How security flows through the stack
+### Request Flow
 
-Every request passes through these layers in order:
+1. Nginx receives the request and terminates TLS.
+2. Flask-Limiter checks the request against Redis-backed rate limits.
+3. Flask-Login validates the session cookie.
+4. The route handler verifies trip ownership.
+5. Free-text values are sanitized.
+6. SQLAlchemy writes through parameterized queries.
+7. Security headers are attached to the response.
 
-1. **Nginx** — TLS termination, HSTS header injection
-2. **Flask-Limiter** — rate limit check against Redis (200/day, 50/hour per IP)
-3. **Flask-Login** — session cookie validated against Redis session store
-4. **Route handler** — ownership check via get_owned_trip_or_404(trip_id, current_user.id)
-5. **Bleach** — free-text fields sanitized before DB write
-6. **SQLAlchemy ORM** — parameterized queries, no raw SQL
-7. **egister_security()** — security headers appended to every response
+### Scaling Flow
+
+1. Nginx distributes traffic across app containers.
+2. Flask stays stateless, so any instance can handle any request.
+3. Redis stores shared session and collaboration state.
+4. PostgreSQL handles the core data model, with read-heavy routes eligible for replica offload.
+5. Celery absorbs CPU-heavy work such as PDF generation and budget analysis.
+
+## Database
+
+The schema follows the ownership chain: a user owns trips, trips contain stops, stops schedule activities, and supporting data hangs off the trip.
+
+```text
+USERS           TRIPS             STOPS             STOP_ACTIVITIES
+id              id                id                id
+name            user_id           trip_id           stop_id
+email           name              city_id           activity_id
+password_hash   description       order_index       day_number
+avatar_url      cover_image       start_date       start_time
+language        start_date        end_date         notes
+is_admin        end_date          notes
+
+CITIES          ACTIVITIES        PACKING_ITEMS     TRIP_NOTES     TRIP_EXPENSES
+id              id                id                id             id
+name            city_id           trip_id           trip_id        trip_id
+country         name              name              stop_id        category
+region          description       category          content        description
+description     cost              is_packed         created_at     amount
+image_url       duration_hours                      updated_at      currency
+cost_index      image_url
+popularity
+latitude
+longitude
+```
+
+### Key Design Decisions
+
+- `share_token` uses `secrets.token_urlsafe(32)` for strong, revocable share links.
+- `cost_index` powers both city display and budget projections.
+- `popularity` on cities grows when trips add them, which helps surface frequently used destinations.
+- `stop_id` on notes is nullable, so notes can be trip-wide or tied to one stop.
+- `order_index` supports stop reordering without renumbering every row.
+- `is_admin` powers privileged operations through the admin guard.
+
+## API
+
+All endpoints live under `/api`. The frontend talks only through this layer, and every protected route requires a valid session.
+
+### Authentication
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/auth/login` | Sign in with email and password |
+| POST | `/api/auth/signup` | Create a new account |
+| POST | `/api/auth/logout` | End the session |
+| GET | `/api/auth/me` | Restore the session on page load |
+| POST | `/api/auth/forgot-password` | Request a password reset |
+| POST | `/api/auth/change-password` | Change the password after verification |
+
+### Trips
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/trips` | List the current user's trips |
+| POST | `/api/trips` | Create a trip |
+| GET | `/api/trips/:id` | Fetch one trip with its stops |
+| PUT | `/api/trips/:id` | Update trip metadata |
+| DELETE | `/api/trips/:id` | Delete the trip and its related data |
+
+### Itinerary
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/trips/:id/stops` | Add a city stop |
+| DELETE | `/api/trips/:id/stops/:sid` | Remove a stop |
+| PUT | `/api/trips/:id/stops/reorder` | Reorder the stops |
+| POST | `/api/stops/:sid/activities` | Schedule an activity |
+| DELETE | `/api/stops/:sid/activities/:aid` | Remove a scheduled activity |
+
+### Budget
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/trips/:id/budget` | Full budget breakdown |
+| POST | `/api/trips/:id/expenses` | Add a manual expense |
+| DELETE | `/api/trips/:id/expenses/:eid` | Remove an expense |
+| GET | `/api/trips/:id/budget/health` | Get the budget health score |
+| POST | `/api/trips/:id/budget/health/refresh` | Force a recompute |
+
+### Packing and Notes
+
+| Method | Path | Description |
+| --- | --- | --- |
+| GET | `/api/trips/:id/packing` | List packing items |
+| POST | `/api/trips/:id/packing` | Add a packing item |
+| POST | `/api/trips/:id/packing/:iid/toggle` | Toggle packed status |
+| DELETE | `/api/trips/:id/packing/:iid` | Remove a packing item |
+| GET | `/api/trips/:id/notes` | List notes |
+| POST | `/api/trips/:id/notes` | Add a note |
+| DELETE | `/api/trips/:id/notes/:nid` | Delete a note |
+
+### Collaboration
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/trips/:id/presence` | Register a viewer heartbeat |
+| GET | `/api/trips/:id/presence` | Poll current viewers and locks |
+| DELETE | `/api/trips/:id/presence` | Leave a trip |
+| POST | `/api/trips/:id/presence/leave` | Beacon-friendly leave endpoint |
+| POST | `/api/trips/:id/stops/:sid/lock` | Acquire an edit lock |
+| DELETE | `/api/trips/:id/stops/:sid/lock` | Release an edit lock |
+
+### Magic Fill and Export
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/trips/:id/stops/:sid/magic-fill` | Auto-schedule top activities |
+| POST | `/api/trips/:id/export/pdf` | Trigger PDF generation |
+| GET | `/api/trips/:id/export/pdf/download` | Download the generated PDF |
+
+### Sharing and Catalog
+
+| Method | Path | Description |
+| --- | --- | --- |
+| POST | `/api/trips/:id/share` | Generate a share token |
+| GET | `/api/shared/:token` | Public trip view |
+| GET | `/api/cities` | Search the city catalog |
+| GET | `/api/activities` | Search the activity catalog |
+| GET | `/api/dashboard` | Dashboard data for the signed-in user |
+| PUT | `/api/profile` | Update the user profile |
+
+## Security
+
+Security is treated as a first-class part of the system.
+
+| Mechanism | Where it lives | What it protects |
+| --- | --- | --- |
+| Password hashing | `backend/models/user.py` | Brute-force and rainbow table attacks |
+| Session storage in Redis | `backend/config.py` | Session fixation and cross-instance drift |
+| HttpOnly and SameSite cookies | `backend/config.py` | Cookie theft and cross-site abuse |
+| CSRF protection | Flask-WTF and form routes | Cross-site request forgery |
+| Input sanitization | `backend/helpers.py` | Stored XSS |
+| Parameterized ORM queries | SQLAlchemy throughout | SQL injection |
+| Ownership checks | `backend/helpers.py` | Horizontal privilege escalation |
+| Admin guard | `backend/security.py` | Vertical privilege escalation |
+| Rate limiting | Flask-Limiter with Redis | Abuse and credential stuffing |
+| Security headers | `backend/security.py` | Clickjacking, sniffing, and leakage |
+| HSTS | `backend/security.py` | Protocol downgrade attacks |
+| Open redirect guard | `backend/security.py` | Phishing via redirect abuse |
+| Share token entropy | `backend/models/trip.py` | Token guessing |
+| Lock TTLs | Redis-backed stop locks | Stale edits and deadlocks |
+
+## Scalability
+
+Traveloop is designed to scale horizontally without code changes.
+
+| Concern | Mechanism |
+| --- | --- |
+| Web tier | Stateless Flask instances behind Nginx |
+| Sessions | Redis-backed instead of in-memory |
+| Presence | Redis sorted sets with TTL heartbeats |
+| Stop locking | Redis `SET NX` with expiry |
+| Budget cache | Redis cached health scores |
+| PDF cache | Redis cached exports |
+| Rate limiting | Redis-backed counters |
+| Heavy tasks | Celery worker pool |
+| Read traffic | PostgreSQL replica for read-heavy routes |
+| Response size | Paginated queries with bounded page sizes |
+
+PDF and budget health follow a three-tier execution model:
+
+1. Redis cache hit returns immediately.
+2. Celery runs the task asynchronously when workers are available.
+3. If no worker responds, the app falls back to synchronous execution so the feature still works in development and demo environments.
+
+## Setup
+
+Run the provided Docker Compose stack from the project root to start PostgreSQL, Redis, multiple Flask instances, and Nginx.
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APP_ENV` | `development` | Chooses the config class |
+| `DATABASE_URL` | `sqlite:///Database/traveloop.db` | Primary database URL |
+| `REPLICA_DATABASE_URL` | same as primary | Optional read replica |
+| `REDIS_URL` | `redis://localhost:6379/0` | Sessions, caches, and presence |
+| `RATELIMIT_STORAGE_URL` | `memory://` | Rate limiting backend |
+| `SECRET_KEY` | dev default | Session signing key |
+| `AUTO_CREATE_DB` | `false` | Auto-create schema on startup |
+| `AUTO_SEED_DATA` | `false` | Seed demo data on startup |
+| `SESSION_COOKIE_SECURE` | `false` | HTTPS-only cookies in production |
+| `LOG_LEVEL` | `INFO` | Logging verbosity |
+
+## Project Structure
+
+| File | Purpose |
+| --- | --- |
+| `backend/app.py` | App factory, SPA fallback, session setup |
+| `backend/config.py` | Development, test, and production config |
+| `backend/security.py` | Security headers, error handlers, admin guard |
+| `backend/helpers.py` | Ownership helpers, pagination, sanitization |
+| `backend/tasks.py` | Celery tasks |
+| `backend/services/presence.py` | Redis presence heartbeats and stop locks |
+| `backend/services/budget_health.py` | Budget scoring and anomaly detection |
+| `backend/services/pdf_export.py` | ReportLab PDF generation |
+| `backend/routes/api.py` | JSON API endpoints |
+| `frontend/src/context/AuthContext.jsx` | Session restore and auth state |
+| `frontend/src/api/client.js` | Fetch wrapper and 401 handling |
+
+## Team
+
+This project was built for the hackathon to show a production-minded travel platform with real infrastructure, real security boundaries, and a complete end-to-end workflow.
+egister_security()** — security headers appended to every response
 
 If any layer rejects the request, it stops there. Nothing downstream executes.
 
