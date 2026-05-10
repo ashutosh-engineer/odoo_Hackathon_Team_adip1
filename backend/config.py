@@ -1,18 +1,11 @@
 """
-Application Configuration
--------------------------
-Centralizes all config values in one place. Uses environment variables
-where available, with safe defaults for local development.
+Application configuration.
 
-Why a class-based config?
-- Flask natively supports loading from objects via app.config.from_object()
-- Lets us cleanly switch between development, production, and testing
-- Keeps secrets and environment-specific behavior out of route code
+Defines the environment-specific Flask settings used by the app factory.
 """
 
 import os
 
-# Base directory — points to project root (one level up from backend/)
 BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 
 
@@ -43,6 +36,8 @@ class BaseConfig:
     AUTO_CREATE_DB = _env_flag('AUTO_CREATE_DB', False)
     AUTO_SEED_DATA = _env_flag('AUTO_SEED_DATA', False)
     JSON_SORT_KEYS = False
+    WTF_CSRF_ENABLED = True
+    WTF_CSRF_TIME_LIMIT = None
 
 
 class DevelopmentConfig(BaseConfig):

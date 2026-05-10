@@ -1,14 +1,7 @@
 """
-Route Registration
--------------------
-Centralizes all Flask Blueprint imports so app.py stays clean.
-Each blueprint handles one domain (auth, trips, itinerary, etc.)
+Route registration helpers.
 
-Why Blueprints?
-- Modular: each feature lives in its own file
-- Follows Odoo-style separation of concerns
-- Easy to add/remove features without touching other code
-- URL prefixes keep endpoints organized
+Imports and registers all Flask blueprints used by the application.
 """
 
 
@@ -38,3 +31,7 @@ def register_routes(app):
     app.register_blueprint(notes_bp, url_prefix='/notes')
     app.register_blueprint(share_bp, url_prefix='/share')
     app.register_blueprint(profile_bp, url_prefix='/profile')
+
+    # JSON API for React frontend — single endpoint collection under /api
+    from backend.routes.api import api_bp
+    app.register_blueprint(api_bp, url_prefix='/api')

@@ -1,15 +1,15 @@
 """
-Backend Helpers
----------------
-Shared request-validation and ownership helpers used by multiple blueprints.
+Backend helpers.
 
-The goal is to keep route code small, consistent, and less error-prone.
+Shared request-validation, pagination, and ownership helpers used by
+multiple blueprints.
 """
 
 from datetime import date
 
 from flask import flash, redirect, request, url_for
 
+from backend.models import db
 from backend.models.trip import Trip, TripExpense
 from backend.models.itinerary import Stop
 from backend.models.packing import PackingItem, TripNote
@@ -60,6 +60,24 @@ def parse_int_list(values):
     if not values:
         return []
     return [int(value) for value in values if value not in (None, '', [])]
+
+
+def get_pagination_params(default_per_page=20, max_per_page=50):
+    """Read page and page-size query parameters with safe bounds."""
+    page = request.args.get('page', default=1, type=int) or 1
+    per_page = request.args.get('per_page', default=default_per_page, type=int) or default_per_page
+    page = max(page, 1)
+    per_page = max(1, min(per_page, max_per_page))
+    return page, per_page
+
+
+def paginate_query(query, page=None, per_page=None, default_per_page=20, max_per_page=50):
+    """Paginate a SQLAlchemy query using bounded request parameters."""
+    page = page or request.args.get('page', default=1, type=int) or 1
+    per_page = per_page or request.args.get('per_page', default=default_per_page, type=int) or default_per_page
+    page = max(page, 1)
+    per_page = max(1, min(per_page, max_per_page))
+    return db.paginate(query, page=page, per_page=per_page, error_out=False)
 
 
 def get_owned_trip_or_404(trip_id, user_id):

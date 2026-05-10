@@ -1,18 +1,7 @@
 """
-City Model
-----------
-Reference data representing global destinations that users can add to trips.
+City model.
 
-Design decisions:
-- Pre-populated via seed script (not user-generated) — ensures data quality
-- cost_index (0-100 scale) gives a relative affordability score per city
-- popularity tracks how often a city is added to trips (updated dynamically)
-- Coordinates stored for potential map integration
-
-Why not an external API for city data?
-- Hackathon constraint: minimize external dependencies
-- Seed data gives us full control over quality and availability
-- No API rate limits or downtime risk during demo
+Stores destination reference data used when travelers add stops to trips.
 """
 
 from backend.models import db

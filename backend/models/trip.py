@@ -1,16 +1,8 @@
 """
-Trip Model
-----------
-Core entity — represents a user's travel plan containing multiple stops.
+Trip model.
 
-Design decisions:
-- share_token uses secrets.token_urlsafe() for generating unique public URLs
-- is_public flag controls visibility (private by default)
-- Cascade delete ensures removing a trip cleans up all stops, expenses, notes, etc.
-- Dates are nullable because a user might create a trip idea before picking dates
-
-Trade-off: cover_image stores a file path, not binary. Keeps DB lightweight
-and lets us serve images via static file handling.
+Represents a travel plan and the data attached to it, including stops,
+notes, expenses, and share state.
 """
 
 import secrets

@@ -99,20 +99,14 @@ Why this stack:
 - It maps naturally to a relational travel-planning domain.
 - It supports a server-rendered app without introducing a heavier frontend stack.
 
-Alternatives rejected for this scope:
-
-- JWT auth: unnecessary for a server-rendered session app.
-- External DB services: more operational overhead than needed for the current phase.
-- Full SPA architecture: would add complexity without improving the core workflow here.
-
-## 4. Why It Matters
+## 4. Submission Value
 
 This project is built to demonstrate more than basic CRUD.
 
 - It shows a complete domain workflow with real user value.
 - It demonstrates backend structure that is maintainable under production constraints.
 - It includes explicit security decisions rather than assuming the demo environment is safe.
-- It documents the product and the system clearly enough for reviewers to evaluate design trade-offs.
+- It documents the product and the system clearly enough for reviewers to evaluate the implementation.
 
 ## 5. Architecture (HLD)
 
@@ -147,11 +141,11 @@ Data flow:
 4. The response is rendered as HTML or JSON.
 5. Security headers and error handlers apply automatically.
 
-Trade-offs:
+Design principles:
 
-- Server-rendered views are simpler to maintain, but less interactive than a SPA.
-- SQLite is efficient for local development, but a multi-user production deployment should move to PostgreSQL or another robust server database.
-- Shared helpers reduce duplication, but they should stay small and explicit to avoid hiding business rules.
+- Server-rendered views keep the app approachable for users and reviewers.
+- Relational data modeling matches the ownership-heavy trip workflow.
+- Shared helpers keep route code concise and consistent.
 
 ## 6. Database Design
 
@@ -304,12 +298,12 @@ High-volume caching targets:
 - Dashboard aggregates and counters
 - Frequently requested trip summaries
 
-Operational trade-offs:
+Production notes:
 
-- Stateless app servers improve horizontal scaling, but they require shared session and cache infrastructure.
-- Stronger consistency through a relational database is more expensive than eventual-consistency systems, but it fits the ownership-heavy trip workflow.
-- More aggressive caching improves throughput, but cache invalidation must be deliberate for trip edits, sharing changes, and budget updates.
-- Supporting 1M concurrent users is an infrastructure problem as much as a code problem, so the application is structured to make that transition possible without a rewrite.
+- Stateless app servers improve horizontal scaling when paired with shared session and cache infrastructure.
+- Strong consistency from a relational database suits the ownership-heavy trip workflow.
+- Cache invalidation must be deliberate for trip edits, sharing changes, and budget updates.
+- Supporting 1M concurrent users is an infrastructure problem as much as a code problem, so the application is structured for that transition.
 
 ## 11. Logging & Debugging
 
@@ -374,12 +368,6 @@ Major reasons behind the current structure:
 - Local seed data keeps the app self-contained and demo-friendly.
 - Random share tokens are safer than predictable public IDs.
 - Security headers and error handlers raise the baseline without adding heavy infrastructure.
-
-Trade-offs accepted:
-
-- Simplicity over a complex microservice architecture.
-- Relational storage over document storage because the domain is inherently relational.
-- Server-rendered pages over a full SPA because the app is workflow-focused.
 
 What would change at scale:
 

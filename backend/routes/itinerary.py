@@ -1,19 +1,11 @@
 """
-Itinerary Routes
------------------
-The core trip-building experience — adding stops (cities), scheduling
-activities within each stop, and reordering the journey.
+Itinerary routes.
 
-This is the most interactive part of the app. Routes serve both
-full page renders and JSON responses for AJAX operations (add/remove/reorder).
-
-Why AJAX for some operations?
-- Adding a stop shouldn't reload the entire page
-- Reordering cities should be instant (drag-and-drop feel)
-- The builder page stays responsive as the itinerary grows
+Handles trip stops, activity scheduling, and reorder operations for the
+itinerary builder.
 """
 
-from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify
+from flask import Blueprint, render_template, redirect, url_for, flash, request, jsonify, current_app
 from flask_login import login_required, current_user
 from backend.models import db
 from backend.models.trip import Trip
@@ -29,6 +21,7 @@ from backend.helpers import (
     parse_optional_date,
     parse_optional_int,
 )
+from backend.jobs import increment_city_popularity, run_background_job
 
 itinerary_bp = Blueprint('itinerary', __name__)
 
@@ -48,7 +41,6 @@ def builder(trip_id):
     trip = get_user_trip(trip_id)
     stops = trip.stops.all()
 
-    # Preload cities for the search/add panel (dynamic from DB)
     cities = City.query.order_by(City.popularity.desc()).all()
 
     return render_template(
@@ -81,7 +73,6 @@ def add_stop(trip_id):
     """
     trip = get_user_trip(trip_id)
 
-    # Support both form data and JSON requests
     data = get_json_or_form_payload()
     city_id = data.get('city_id')
     start_date_str = data.get('start_date')
@@ -95,7 +86,6 @@ def add_stop(trip_id):
 
     city = City.query.get_or_404(parse_optional_int(city_id))
 
-    # Parse optional dates
     try:
         start_date = parse_optional_date(start_date_str)
         end_date = parse_optional_date(end_date_str)
@@ -105,7 +95,6 @@ def add_stop(trip_id):
         flash('Invalid date format.', 'error')
         return redirect(url_for('itinerary.builder', trip_id=trip_id))
 
-    # Auto-assign order based on current stop count
     current_count = trip.stops.count()
 
     stop = Stop(
@@ -144,7 +133,6 @@ def remove_stop(trip_id, stop_id):
 
     db.session.delete(stop)
 
-    # Re-index remaining stops to keep order sequential
     remaining = Stop.query.filter_by(trip_id=trip.id).order_by(Stop.order_index).all()
     for idx, s in enumerate(remaining):
         s.order_index = idx

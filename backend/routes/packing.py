@@ -1,13 +1,7 @@
 """
-Packing Checklist Routes
--------------------------
-Per-trip checklist where users manage items they need to pack.
-Items are categorized and have a packed/unpacked toggle.
+Packing checklist routes.
 
-Why a separate packing feature?
-- Travelers consistently rank "forgetting to pack something" as a top pain point
-- Categorized lists (clothing, documents, electronics) reduce cognitive load
-- Packed progress indicator adds a satisfying completion feel
+Manages per-trip checklist items and packed/unpacked state.
 """
 
 from flask import Blueprint, render_template, request, jsonify, redirect, url_for, flash
@@ -19,7 +13,6 @@ from backend.helpers import get_form_value
 
 packing_bp = Blueprint('packing', __name__)
 
-# Default categories for organization
 PACKING_CATEGORIES = ['clothing', 'documents', 'electronics', 'toiletries', 'medicine', 'other']
 
 

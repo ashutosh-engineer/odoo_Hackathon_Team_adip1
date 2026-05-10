@@ -21,11 +21,10 @@ from werkzeug.utils import secure_filename
 from backend.models import db
 from backend.models.trip import Trip
 from backend.models.city import City
-from backend.helpers import get_form_value, parse_optional_date
+from backend.helpers import get_form_value, parse_optional_date, paginate_query
 
 trips_bp = Blueprint('trips', __name__)
 
-# Allowed image extensions for cover photos
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'webp'}
 
 
@@ -46,15 +45,30 @@ def get_user_trip_or_404(trip_id):
 @trips_bp.route('/')
 @login_required
 def list_trips():
-    """Show all trips owned by the current user, newest first."""
-    trips = (
-        Trip.query
-        .filter_by(user_id=current_user.id)
-        .order_by(Trip.updated_at.desc())
-        .all()
-    )
-    return render_template('trips/list.html', trips=trips)
+    """Show trips owned by the current user, newest first."""
+    query = Trip.query.filter_by(user_id=current_user.id)
+    search = request.args.get('q', '').strip()
+    trip_state = request.args.get('state', '').strip().lower()
 
+    if search:
+        search_term = f'%{search}%'
+        query = query.filter(
+            (Trip.name.ilike(search_term)) | (Trip.description.ilike(search_term))
+        )
+
+    if trip_state == 'upcoming':
+        query = query.filter(Trip.start_date != None)
+    elif trip_state == 'past':
+        query = query.filter(Trip.end_date != None)
+
+    pagination = paginate_query(query.order_by(Trip.updated_at.desc()), default_per_page=12, max_per_page=48)
+    return render_template(
+        'trips/list.html',
+        trips=pagination.items,
+        pagination=pagination,
+        search=search,
+        selected_state=trip_state
+    )
 
 @trips_bp.route('/create', methods=['GET', 'POST'])
 @login_required
@@ -74,7 +88,6 @@ def create():
             flash('Trip name is required.', 'error')
             return render_template('trips/create.html')
 
-        # Parse date strings to date objects
         try:
             start = parse_optional_date(start_date)
             end = parse_optional_date(end_date)
@@ -94,7 +107,6 @@ def create():
             end_date=end
         )
 
-        # Handle cover image upload
         cover = request.files.get('cover_image')
         if cover and cover.filename and allowed_file(cover.filename):
             filename = secure_filename(f"trip_{current_user.id}_{cover.filename}")
@@ -109,7 +121,6 @@ def create():
         flash(f'Trip "{name}" created! Now add your destinations.', 'success')
         return redirect(url_for('itinerary.builder', trip_id=trip.id))
 
-    # GET — show list of popular cities for inspiration (dynamic data)
     popular_cities = City.query.order_by(City.popularity.desc()).limit(6).all()
     return render_template('trips/create.html', popular_cities=popular_cities)
 
@@ -143,7 +154,6 @@ def edit(trip_id):
             flash('Invalid date format.', 'error')
             return render_template('trips/create.html', trip=trip, editing=True)
 
-        # Handle new cover image
         cover = request.files.get('cover_image')
         if cover and cover.filename and allowed_file(cover.filename):
             filename = secure_filename(f"trip_{current_user.id}_{cover.filename}")

@@ -1,16 +1,7 @@
 """
-Activity Model
----------------
-Things to do in a city — sightseeing, food tours, adventure, culture, etc.
+Activity model.
 
-Design decisions:
-- Tied to a city (FK) because activities are location-specific
-- category field enables filtering in the UI (dropdown/chips)
-- cost and duration_hours help with budget estimation and schedule planning
-- image_url points to a representative photo for visual appeal
-
-Trade-off: Activities are seed data, not user-generated. This keeps quality
-high but limits personalization. A future version could allow custom activities.
+Represents city-specific activities used by the itinerary builder and budget views.
 """
 
 from backend.models import db

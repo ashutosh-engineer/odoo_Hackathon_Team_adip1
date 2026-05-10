@@ -11,7 +11,7 @@ from backend.models import db
 from backend.models.trip import Trip
 from backend.models.packing import TripNote
 from backend.models.itinerary import Stop
-from backend.helpers import get_form_value, parse_optional_int
+from backend.helpers import get_form_value, parse_optional_int, paginate_query
 
 notes_bp = Blueprint('notes', __name__)
 
@@ -28,7 +28,8 @@ def journal(trip_id):
     if stop_filter:
         notes_query = notes_query.filter_by(stop_id=stop_filter)
 
-    notes = notes_query.order_by(TripNote.created_at.desc()).all()
+    pagination = paginate_query(notes_query.order_by(TripNote.created_at.desc()), default_per_page=20, max_per_page=50)
+    notes = pagination.items
     stops = trip.stops.all()
 
     return render_template(
@@ -36,9 +37,9 @@ def journal(trip_id):
         trip=trip,
         notes=notes,
         stops=stops,
-        selected_stop=stop_filter
+        selected_stop=stop_filter,
+        pagination=pagination
     )
-
 
 @notes_bp.route('/<int:trip_id>/add', methods=['POST'])
 @login_required
@@ -53,7 +54,6 @@ def add_note(trip_id):
         flash('Note content cannot be empty.', 'error')
         return redirect(url_for('notes.journal', trip_id=trip_id))
 
-    # Validate stop belongs to this trip if specified
     if stop_id:
         Stop.query.filter_by(id=stop_id, trip_id=trip.id).first_or_404()
 
