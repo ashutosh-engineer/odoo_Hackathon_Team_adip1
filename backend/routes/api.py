@@ -131,8 +131,22 @@ def api_dashboard():
 @api_bp.route('/trips')
 @login_required
 def api_list_trips():
-    trips = Trip.query.filter_by(user_id=current_user.id)        .order_by(Trip.updated_at.desc()).all()
-    return jsonify([_trip_to_dict(t) for t in trips])
+    """List user's trips with pagination and replica support."""
+    query = Trip.query.filter_by(user_id=current_user.id).order_by(Trip.updated_at.desc())
+    
+    pagination = paginate_query(
+        query,
+        default_per_page=10,
+        use_replica=True
+    )
+    
+    return jsonify({
+        'trips': [_trip_to_dict(t) for t in pagination.items],
+        'total': pagination.total,
+        'page': pagination.page,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev
+    })
 
 
 @api_bp.route('/trips', methods=['POST'])
@@ -165,8 +179,13 @@ def api_create_trip():
 @api_bp.route('/trips/<int:trip_id>')
 @login_required
 def api_get_trip(trip_id):
-    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    """Retrieve detailed trip data, using replica for read-only access."""
+    from backend.helpers import get_owned_trip_or_404
+    trip = get_owned_trip_or_404(trip_id, current_user.id, use_replica=True)
+    
+    # Eagerly load stops from the same bind if needed
     stops = trip.stops.all()
+    
     return jsonify({
         **_trip_to_dict(trip),
         'stops': [_stop_to_dict(s) for s in stops]
@@ -311,6 +330,7 @@ def api_remove_stop_activity(stop_id, sa_id):
 @api_bp.route('/cities')
 @login_required
 def api_cities():
+    """Search for cities with pagination and optional replica support."""
     q = request.args.get('q', '').strip()
     region = request.args.get('region', '').strip()
     cost_max = request.args.get('cost_max', type=float)
@@ -324,15 +344,29 @@ def api_cities():
     if cost_max is not None:
         query = query.filter(City.cost_index <= cost_max)
 
-    cities = query.order_by(City.popularity.desc()).all()
-    regions = [r[0] for r in City.query.with_entities(City.region).distinct().all() if r[0]]
+    # Apply pagination and use replica for this read-heavy search
+    pagination = paginate_query(
+        query.order_by(City.popularity.desc()),
+        default_per_page=12,
+        use_replica=True
+    )
+    
+    regions = [r[0] for r in City.query.with_bind_key('replica').with_entities(City.region).distinct().all() if r[0]]
 
-    return jsonify({'cities': [_city_to_dict(c) for c in cities], 'regions': regions})
+    return jsonify({
+        'cities': [_city_to_dict(c) for c in pagination.items],
+        'regions': regions,
+        'has_next': pagination.has_next,
+        'has_prev': pagination.has_prev,
+        'total': pagination.total,
+        'page': pagination.page
+    })
 
 
 @api_bp.route('/activities')
 @login_required
 def api_activities():
+    """Search for activities with pagination and replica support."""
     city_id = request.args.get('city_id', type=int)
     category = request.args.get('category', '').strip()
 
@@ -342,12 +376,21 @@ def api_activities():
     if category:
         query = query.filter(Activity.category == category)
 
-    activities = query.order_by(Activity.name).all()
-    categories = [c[0] for c in Activity.query.with_entities(Activity.category).distinct().all() if c[0]]
+    # Use replica for read-heavy catalog searches
+    pagination = paginate_query(
+        query.order_by(Activity.name),
+        default_per_page=20,
+        use_replica=True
+    )
+    
+    categories = [c[0] for c in Activity.query.with_bind_key('replica').with_entities(Activity.category).distinct().all() if c[0]]
 
     return jsonify({
-        'activities': [_activity_to_dict(a) for a in activities],
-        'categories': categories
+        'activities': [_activity_to_dict(a) for a in pagination.items],
+        'categories': categories,
+        'total': pagination.total,
+        'page': pagination.page,
+        'has_next': pagination.has_next
     })
 
 
