@@ -1,13 +1,15 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import AuthLayout from '../components/auth/AuthLayout';
 
 export default function Login() {
   const { login } = useAuth();
-  const [email, setEmail] = useState('');
+  const [email, setEmail]       = useState('');
   const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loading, setLoading] = useState(false);
+  const [showPw, setShowPw]     = useState(false);
+  const [error, setError]       = useState('');
+  const [loading, setLoading]   = useState(false);
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -23,50 +25,83 @@ export default function Login() {
   }
 
   return (
-    <div className="auth-layout">
-      <div className="auth-panel-left">
-        <div className="auth-branding">
-          <div className="logo-mark">✈</div>
-          <h2>Plan Smarter,<br />Travel Better</h2>
-          <p>Build multi-city itineraries, track budgets, and share your journey with the world.</p>
-          <div className="auth-features">
-            <div className="auth-feature-item"><span className="check-icon">✓</span><span>Smart itinerary builder with drag &amp; drop</span></div>
-            <div className="auth-feature-item"><span className="check-icon">✓</span><span>Real-time budget tracking &amp; cost breakdown</span></div>
-            <div className="auth-feature-item"><span className="check-icon">✓</span><span>Explore 12+ destinations with 60+ activities</span></div>
-            <div className="auth-feature-item"><span className="check-icon">✓</span><span>Share your plans with a single link</span></div>
-          </div>
-        </div>
-      </div>
+    <AuthLayout>
+      <div className="amz-auth">
 
-      <div className="auth-panel-right">
-        <div className="auth-card">
-          <div className="auth-card-header">
-            <div className="logo-inline"><div className="icon">✈</div><span>Traveloop</span></div>
-            <h1>Welcome back</h1>
-            <p>Sign in to continue planning your next adventure</p>
-          </div>
+        <div className="amz-auth__box">
+          <h1 className="amz-auth__title">Sign in</h1>
 
-          {error && <div className="auth-error">{error}</div>}
-
-          <form className="auth-form" onSubmit={handleSubmit}>
-            <div className="form-group">
-              <label className="form-label" htmlFor="email">Email address</label>
-              <input type="email" className="form-input" id="email" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" required autoFocus />
+          {error && (
+            <div className="amz-auth__error" role="alert">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+              {error}
             </div>
-            <div className="form-group">
-              <label className="form-label" htmlFor="password">Password</label>
-              <input type="password" className="form-input" id="password" value={password} onChange={(e) => setPassword(e.target.value)} placeholder="Enter your password" required minLength={6} />
+          )}
+
+          <form onSubmit={handleSubmit} noValidate>
+            <div className="amz-auth__field">
+              <label className="amz-auth__label" htmlFor="email">Email</label>
+              <input
+                id="email"
+                type="email"
+                className="amz-auth__input"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                autoComplete="email"
+                autoFocus
+              />
             </div>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? 'Signing in...' : 'Sign In'}
+
+            <div className="amz-auth__field">
+              <div className="amz-auth__label-row">
+                <label className="amz-auth__label" htmlFor="password">Password</label>
+                <Link to="/forgot-password" className="amz-auth__small-link">Forgot password?</Link>
+              </div>
+              <div className="amz-auth__pw-wrap">
+                <input
+                  id="password"
+                  type={showPw ? 'text' : 'password'}
+                  className="amz-auth__input amz-auth__input--pw"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  required
+                  minLength={6}
+                  autoComplete="current-password"
+                />
+                <button type="button" className="amz-auth__eye"
+                  onClick={() => setShowPw((v) => !v)}
+                  aria-label={showPw ? 'Hide password' : 'Show password'}>
+                  {showPw
+                    ? <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                    : <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  }
+                </button>
+              </div>
+            </div>
+
+            <button type="submit" className="amz-auth__btn" disabled={loading}>
+              {loading
+                ? <><span className="amz-auth__spinner" aria-hidden="true" /> Signing in…</>
+                : 'Sign in'}
             </button>
           </form>
 
-          <div className="auth-footer">
-            Don&apos;t have an account? <Link to="/signup">Create one</Link>
-          </div>
+          <p className="amz-auth__terms">
+            By signing in you agree to Traveloop's{' '}
+            <span className="amz-auth__terms-link">Conditions of Use</span> and{' '}
+            <span className="amz-auth__terms-link">Privacy Notice</span>.
+          </p>
         </div>
+
+        <div className="amz-auth__divider">
+          <span>New to Traveloop?</span>
+        </div>
+
+        <Link to="/signup" className="amz-auth__create-btn">
+          Create your Traveloop account
+        </Link>
       </div>
-    </div>
+    </AuthLayout>
   );
 }

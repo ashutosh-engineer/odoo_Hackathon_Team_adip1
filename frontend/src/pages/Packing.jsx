@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useParams, Link } from 'react-router-dom';
 import { api } from '../api/client';
-import { Plus, Trash2, CheckSquare, Square } from 'lucide-react';
+import { Plus, Trash2, CheckSquare, Square, Luggage } from 'lucide-react';
+import PageShell from '../components/layout/PageShell';
+import TripWorkflowNav from '../components/layout/TripWorkflowNav';
+import EmptyState from '../components/layout/EmptyState';
 
 const PACKING_CATEGORIES = ['clothing', 'toiletries', 'electronics', 'documents', 'medical', 'general'];
 
@@ -10,8 +13,13 @@ export default function Packing() {
   const [items, setItems] = useState([]);
   const [newItem, setNewItem] = useState({ name: '', category: 'general' });
 
-  function load() { api.get(`/trips/${id}/packing`).then(setItems).catch(console.error); }
-  useEffect(() => { load(); }, [id]);
+  function load() {
+    api.get(`/trips/${id}/packing`).then(setItems).catch(console.error);
+  }
+
+  useEffect(() => {
+    load();
+  }, [id]);
 
   async function addItem(e) {
     e.preventDefault();
@@ -31,7 +39,6 @@ export default function Packing() {
     load();
   }
 
-  // Group by category
   const grouped = items.reduce((acc, item) => {
     (acc[item.category] = acc[item.category] || []).push(item);
     return acc;
@@ -42,56 +49,120 @@ export default function Packing() {
   const pct = total ? Math.round((packed / total) * 100) : 0;
 
   return (
-    <>
-      <div className="page-header">
-        <div><h1 className="page-title">Packing Checklist</h1><p className="page-subtitle">{packed}/{total} items packed ({pct}%)</p></div>
-        <Link to={`/trips/${id}`} className="btn btn-outline">← Back</Link>
+    <PageShell
+      title="Packing"
+      subtitle={`${packed} of ${total} packed · ${pct}%`}
+      ribbon={<TripWorkflowNav />}
+      actions={<Link to={`/trips/${id}`} className="btn btn-ghost btn-sm">Overview</Link>}
+    >
+      <div className="card" style={{ marginBottom: '1.5rem', padding: '1.1rem 1.35rem' }}>
+        <div className="progress-bar" style={{ height: 10 }}>
+          <div className="progress-fill" style={{ width: `${pct}%` }} />
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.8125rem', color: 'var(--gray-500)' }}>
+          <span>{packed} ready</span>
+          <span>{total - packed} left</span>
+        </div>
       </div>
 
-      <div className="content-area">
-        {/* Progress */}
-        <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem 1.5rem' }}>
-          <div className="progress-bar" style={{ height: 10 }}>
-            <div className="progress-fill" style={{ width: `${pct}%` }} />
+      <form onSubmit={addItem} className="card card--quiet" style={{ marginBottom: '1.5rem', padding: '1.25rem' }}>
+        <div className="packing-add-grid">
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor="pack-name">Item</label>
+            <input
+              id="pack-name"
+              type="text"
+              className="form-input"
+              placeholder="Noise-cancelling headphones"
+              value={newItem.name}
+              onChange={(e) => setNewItem({ ...newItem, name: e.target.value })}
+              required
+            />
           </div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: '0.5rem', fontSize: '0.82rem', color: 'var(--gray-500)' }}>
-            <span>{packed} packed</span><span>{total - packed} remaining</span>
-          </div>
-        </div>
-
-        {/* Add item form */}
-        <form onSubmit={addItem} className="card" style={{ marginBottom: '1.5rem', display: 'flex', gap: '0.75rem', alignItems: 'end' }}>
-          <div style={{ flex: 1 }}>
-            <label className="form-label">Item name</label>
-            <input type="text" className="form-input" placeholder="e.g. Sunscreen" value={newItem.name} onChange={(e) => setNewItem({ ...newItem, name: e.target.value })} required />
-          </div>
-          <div>
-            <label className="form-label">Category</label>
-            <select className="form-select" value={newItem.category} onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}>
-              {PACKING_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label" htmlFor="pack-cat">Category</label>
+            <select
+              id="pack-cat"
+              className="form-select"
+              value={newItem.category}
+              onChange={(e) => setNewItem({ ...newItem, category: e.target.value })}
+            >
+              {PACKING_CATEGORIES.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
             </select>
           </div>
-          <button type="submit" className="btn btn-primary" style={{ height: 42 }}><Plus size={16} /> Add</button>
-        </form>
+          <button type="submit" className="btn btn-primary" style={{ height: 42 }}>
+            <Plus size={16} /> Add
+          </button>
+        </div>
+      </form>
 
-        {/* Items grouped by category */}
-        {Object.keys(grouped).length === 0 ? (
-          <div className="empty-state"><h3>Nothing packed yet</h3><p>Start adding items to your packing list</p></div>
-        ) : Object.entries(grouped).map(([cat, catItems]) => (
-          <div key={cat} style={{ marginBottom: '1.5rem' }}>
-            <h3 style={{ fontSize: '0.9rem', fontWeight: 600, textTransform: 'capitalize', color: 'var(--gray-600)', marginBottom: '0.5rem' }}>{cat}</h3>
-            <div className="card" style={{ padding: '0.5rem 1rem' }}>
+      {Object.keys(grouped).length === 0 ? (
+        <EmptyState
+          icon={<Luggage size={22} />}
+          title="Nothing on the list"
+          description="Add essentials by category — tap a row anytime to toggle packed status."
+          action={null}
+        />
+      ) : (
+        Object.entries(grouped).map(([cat, catItems]) => (
+          <div key={cat} style={{ marginBottom: '1.35rem' }}>
+            <h3 style={{
+              fontSize: '0.75rem',
+              fontWeight: 600,
+              textTransform: 'uppercase',
+              letterSpacing: '0.06em',
+              color: 'var(--gray-500)',
+              marginBottom: '0.5rem',
+            }}
+            >
+              {cat}
+            </h3>
+            <div className="card" style={{ padding: '0.35rem 1rem 0.15rem' }}>
               {catItems.map((item) => (
-                <div key={item.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.6rem 0', borderBottom: '1px solid var(--gray-100)', cursor: 'pointer' }} onClick={() => toggleItem(item.id)}>
-                  {item.is_packed ? <CheckSquare size={18} style={{ color: 'var(--success)' }} /> : <Square size={18} style={{ color: 'var(--gray-300)' }} />}
-                  <span style={{ flex: 1, fontSize: '0.9rem', textDecoration: item.is_packed ? 'line-through' : 'none', color: item.is_packed ? 'var(--gray-400)' : 'var(--gray-800)' }}>{item.name}</span>
-                  <button className="btn btn-ghost btn-sm" onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }} style={{ color: 'var(--error)' }}><Trash2 size={14} /></button>
+                <div
+                  key={item.id}
+                  role="button"
+                  tabIndex={0}
+                  className="packing-row"
+                  onClick={() => toggleItem(item.id)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault();
+                      toggleItem(item.id);
+                    }
+                  }}
+                >
+                  {item.is_packed ? (
+                    <CheckSquare size={20} style={{ color: 'var(--success)', flexShrink: 0 }} aria-hidden />
+                  ) : (
+                    <Square size={20} style={{ color: 'var(--gray-300)', flexShrink: 0 }} aria-hidden />
+                  )}
+                  <span
+                    style={{
+                      flex: 1,
+                      fontSize: '0.9rem',
+                      textDecoration: item.is_packed ? 'line-through' : 'none',
+                      color: item.is_packed ? 'var(--gray-400)' : 'var(--gray-800)',
+                    }}
+                  >
+                    {item.name}
+                  </span>
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    onClick={(e) => { e.stopPropagation(); deleteItem(item.id); }}
+                    style={{ color: 'var(--error)' }}
+                  >
+                    <Trash2 size={14} />
+                  </button>
                 </div>
               ))}
             </div>
           </div>
-        ))}
-      </div>
-    </>
+        ))
+      )}
+    </PageShell>
   );
 }

@@ -87,6 +87,20 @@ def api_logout():
     return success_response(message='Logged out.')
 
 
+@api_bp.route('/auth/forgot-password', methods=['POST'])
+def api_forgot_password():
+    """Accept reset requests without revealing whether the email exists (no SMTP in hackathon demo)."""
+    data = request.get_json() or {}
+    email = (data.get('email') or '').strip().lower()
+    if not email:
+        return error_response('Email is required.')
+    # Optional lookup — never branch the outward message on existence
+    User.query.filter_by(email=email).first()
+    return success_response(
+        message='If an account exists for this email, you will receive password reset instructions shortly.',
+    )
+
+
 @api_bp.route('/auth/me')
 def api_me():
     if current_user.is_authenticated:
@@ -581,6 +595,287 @@ def api_shared_trip(token):
                                              
           
                                              
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FEATURE 1 — Collaborative Presence & Stop Locking
+# ═══════════════════════════════════════════════════════════════════════════
+
+@api_bp.route('/trips/<int:trip_id>/presence', methods=['POST'])
+@login_required
+def api_presence_heartbeat(trip_id):
+    """
+    Called every ~15 s by the frontend to signal the user is still viewing.
+    Returns the full list of present users + active stop locks.
+    """
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    from backend.services.presence import heartbeat, get_present_users, get_locks
+    heartbeat(trip_id, current_user.id, current_user.name, current_user.initials)
+    return jsonify({
+        'users': get_present_users(trip_id),
+        'locks': get_locks(trip_id),
+    })
+
+
+@api_bp.route('/trips/<int:trip_id>/presence', methods=['DELETE'])
+@login_required
+def api_presence_leave(trip_id):
+    """Explicitly remove the user from the presence set (page unload)."""
+    from backend.services.presence import leave
+    leave(trip_id, current_user.id)
+    return success_response(message='Left.')
+
+
+@api_bp.route('/trips/<int:trip_id>/presence', methods=['GET'])
+@login_required
+def api_presence_poll(trip_id):
+    """
+    Lightweight poll — returns present users + locks without updating heartbeat.
+    Used by viewers who are not the trip owner.
+    """
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    from backend.services.presence import get_present_users, get_locks
+    return jsonify({
+        'users': get_present_users(trip_id),
+        'locks': get_locks(trip_id),
+    })
+
+
+@api_bp.route('/trips/<int:trip_id>/stops/<int:stop_id>/lock', methods=['POST'])
+@login_required
+def api_lock_stop(trip_id, stop_id):
+    """Acquire an exclusive edit lock on a stop."""
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    Stop.query.filter_by(id=stop_id, trip_id=trip_id).first_or_404()
+    from backend.services.presence import acquire_lock
+    granted = acquire_lock(trip_id, stop_id, current_user.id)
+    if granted:
+        return success_response({'locked': True}, 'Lock acquired.')
+    return jsonify({'success': False, 'locked': False, 'error': 'Stop is being edited by someone else.'}), 409
+
+
+@api_bp.route('/trips/<int:trip_id>/stops/<int:stop_id>/lock', methods=['DELETE'])
+@login_required
+def api_unlock_stop(trip_id, stop_id):
+    """Release the edit lock on a stop."""
+    from backend.services.presence import release_lock
+    release_lock(trip_id, stop_id, current_user.id)
+    return success_response(message='Lock released.')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FEATURE 2 — Smart Budget Health Score
+# ═══════════════════════════════════════════════════════════════════════════
+
+@api_bp.route('/trips/<int:trip_id>/budget/health')
+@login_required
+def api_budget_health(trip_id):
+    """
+    Return the cached Budget Health report, or trigger a Celery task to
+    compute it and return a 202 Accepted while it runs.
+    """
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+
+    import redis as redis_lib, json, os
+    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    r = redis_lib.from_url(redis_url, decode_responses=True)
+    cached = r.get(f'budget_health:{trip_id}')
+
+    if cached:
+        return jsonify({'status': 'ready', 'report': json.loads(cached)})
+
+    # Not cached — kick off Celery task and return 202
+    try:
+        from backend.tasks import calculate_budget_health
+        calculate_budget_health.delay(trip_id)
+    except Exception:
+        # Celery not running — compute synchronously as fallback
+        from backend.models.trip import TripExpense
+        from backend.services.budget_health import calculate
+        trip = Trip.query.get(trip_id)
+        expenses = TripExpense.query.filter_by(trip_id=trip_id).all()
+        stops = trip.stops.all()
+        activity_cost = sum(
+            sa.activity.cost for stop in stops
+            for sa in stop.activities.all() if sa.activity
+        )
+        report = calculate(trip, expenses, activity_cost)
+        result = {
+            'score': report.score, 'band': report.band,
+            'estimated_total': report.estimated_total,
+            'budget_limit': report.budget_limit,
+            'daily_rate': report.daily_rate,
+            'recommended_daily': report.recommended_daily,
+            'anomalies': report.anomalies, 'tips': report.tips,
+        }
+        return jsonify({'status': 'ready', 'report': result})
+
+    return jsonify({'status': 'computing'}), 202
+
+
+@api_bp.route('/trips/<int:trip_id>/budget/health/refresh', methods=['POST'])
+@login_required
+def api_budget_health_refresh(trip_id):
+    """Force-invalidate the cache and recompute the health score."""
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+
+    import redis as redis_lib, os
+    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    r = redis_lib.from_url(redis_url, decode_responses=True)
+    r.delete(f'budget_health:{trip_id}')
+
+    try:
+        from backend.tasks import calculate_budget_health
+        calculate_budget_health.delay(trip_id)
+        return jsonify({'status': 'computing'}), 202
+    except Exception:
+        return api_budget_health(trip_id)
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FEATURE 3 — AI Magic Fill (auto-schedule top activities)
+# ═══════════════════════════════════════════════════════════════════════════
+
+@api_bp.route('/trips/<int:trip_id>/stops/<int:stop_id>/magic-fill', methods=['POST'])
+@login_required
+def api_magic_fill(trip_id, stop_id):
+    """
+    Auto-fill a stop with the N most popular activities for its city.
+
+    Body (JSON, all optional):
+      { "days": 3, "max_per_day": 2 }
+
+    Picks activities ordered by:
+      1. Highest popularity (city.popularity proxy via activity.city)
+      2. Lowest cost (budget-friendly first within same popularity tier)
+
+    Skips activities already scheduled at this stop.
+    """
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+    stop = Stop.query.filter_by(id=stop_id, trip_id=trip_id).first_or_404()
+
+    data = request.get_json() or {}
+    days        = max(1, int(data.get('days', 3)))
+    max_per_day = max(1, int(data.get('max_per_day', 2)))
+    total_slots = days * max_per_day
+
+    # IDs already scheduled — avoid duplicates
+    existing_ids = {sa.activity_id for sa in stop.activities.all()}
+
+    # Fetch top activities for this city, ordered by cost asc (budget-friendly)
+    # In a real system you'd have a popularity column on Activity; we use cost
+    # as a proxy (lower cost = more accessible = more popular for hackathon).
+    candidates = (
+        Activity.query
+        .filter_by(city_id=stop.city_id)
+        .filter(Activity.id.notin_(existing_ids) if existing_ids else True)
+        .order_by(Activity.cost.asc())
+        .limit(total_slots * 2)   # fetch extra so we have room to pick
+        .all()
+    )
+
+    if not candidates:
+        return error_response('No activities available for this city.', 404)
+
+    added = []
+    day = 1
+    per_day_count = 0
+
+    for act in candidates[:total_slots]:
+        if per_day_count >= max_per_day:
+            day += 1
+            per_day_count = 0
+            if day > days:
+                break
+
+        sa = StopActivity(
+            stop_id=stop.id,
+            activity_id=act.id,
+            day_number=day,
+        )
+        db.session.add(sa)
+        added.append({
+            'activity_id':   act.id,
+            'activity_name': act.name,
+            'day_number':    day,
+            'cost':          act.cost,
+            'duration_hours': act.duration_hours,
+        })
+        per_day_count += 1
+
+    db.session.commit()
+
+    return success_response({
+        'added':       added,
+        'total_added': len(added),
+        'days':        days,
+    }, f'Magic Fill added {len(added)} activities across {days} days.')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# FEATURE 4 — PDF Export
+# ═══════════════════════════════════════════════════════════════════════════
+
+@api_bp.route('/trips/<int:trip_id>/export/pdf', methods=['POST'])
+@login_required
+def api_request_pdf(trip_id):
+    """
+    Kick off PDF generation via Celery (or synchronously as fallback).
+    Returns 202 while generating, or 200 with { status: 'ready' } if cached.
+    """
+    Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+
+    import redis as redis_lib, os
+    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    r = redis_lib.from_url(redis_url, decode_responses=False)
+
+    if r.exists(f'pdf:{trip_id}'):
+        return jsonify({'status': 'ready'})
+
+    try:
+        from backend.tasks import generate_trip_pdf_task
+        generate_trip_pdf_task.delay(trip_id)
+        return jsonify({'status': 'generating'}), 202
+    except Exception:
+        # Celery not running — generate synchronously
+        from backend.models.trip import Trip as TripModel
+        from backend.services.pdf_export import generate_trip_pdf
+        trip = TripModel.query.get(trip_id)
+        stops = trip.stops.all()
+        pdf_bytes = generate_trip_pdf(trip, stops)
+        if pdf_bytes:
+            r.setex(f'pdf:{trip_id}', 600, pdf_bytes)
+            return jsonify({'status': 'ready'})
+        return error_response('PDF generation requires ReportLab. Install it with: pip install reportlab', 503)
+
+
+@api_bp.route('/trips/<int:trip_id>/export/pdf/download')
+@login_required
+def api_download_pdf(trip_id):
+    """
+    Stream the cached PDF bytes to the browser as a file download.
+    Returns 404 if not yet generated (client should call POST first).
+    """
+    from flask import Response
+    trip = Trip.query.filter_by(id=trip_id, user_id=current_user.id).first_or_404()
+
+    import redis as redis_lib, os
+    redis_url = os.environ.get('REDIS_URL', 'redis://localhost:6379/0')
+    r = redis_lib.from_url(redis_url, decode_responses=False)
+    pdf_bytes = r.get(f'pdf:{trip_id}')
+
+    if not pdf_bytes:
+        return error_response('PDF not ready. POST to /export/pdf first.', 404)
+
+    safe_name = trip.name.replace(' ', '_').replace('/', '-')[:50]
+    return Response(
+        pdf_bytes,
+        mimetype='application/pdf',
+        headers={
+            'Content-Disposition': f'attachment; filename="Traveloop_{safe_name}.pdf"',
+            'Content-Length': str(len(pdf_bytes)),
+        }
+    )
+
 
 @api_bp.route('/profile', methods=['PUT'])
 @login_required

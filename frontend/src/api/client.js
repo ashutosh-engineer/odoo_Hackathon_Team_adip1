@@ -9,6 +9,8 @@
  *   - Single place to change base URL
  */
 
+import { bypassAuth } from '../config/auth';
+
 const BASE = '/api';
 
 async function request(endpoint, options = {}) {
@@ -27,19 +29,23 @@ async function request(endpoint, options = {}) {
 
   const response = await fetch(url, config);
 
-  // Handle auth expiry — redirect to login if session is gone
-  if (response.status === 401) {
-    window.location.href = '/login';
-    return null;
-  }
-
-  // Try to parse JSON, fall back to text for non-JSON responses
   const contentType = response.headers.get('content-type') || '';
   let data;
   if (contentType.includes('application/json')) {
     data = await response.json();
   } else {
     data = await response.text();
+  }
+
+  // Session missing — bounce to login unless we are bypassing the auth UI only
+  if (response.status === 401) {
+    if (!bypassAuth) {
+      window.location.href = '/login';
+      return null;
+    }
+    const errorMsg =
+      typeof data === 'object' && data != null ? (data.error || data.message) : null;
+    throw new Error(errorMsg || 'Not authenticated');
   }
 
   if (!response.ok) {

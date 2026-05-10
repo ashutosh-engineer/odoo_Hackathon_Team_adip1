@@ -9,12 +9,16 @@
  * If user is not logged in, they're redirected to /login.
  */
 
+import { useState, useCallback } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import SplashScreen from './components/SplashScreen';
+import PageLoader from './components/layout/PageLoader';
 
 import Sidebar from './components/Sidebar';
 import Login from './pages/Login';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
 import Dashboard from './pages/Dashboard';
 import TripList from './pages/TripList';
 import TripCreate from './pages/TripCreate';
@@ -31,7 +35,7 @@ import SharedTrip from './pages/SharedTrip';
 /* Route guard — redirects to login if not authenticated */
 function ProtectedRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="page-loader">Loading...</div>;
+  if (loading) return <PageLoader label="Restoring session…" />;
   if (!user) return <Navigate to="/login" replace />;
   return children;
 }
@@ -39,19 +43,25 @@ function ProtectedRoute({ children }) {
 /* Redirect away from auth pages if already logged in */
 function GuestRoute({ children }) {
   const { user, loading } = useAuth();
-  if (loading) return <div className="page-loader">Loading...</div>;
+  if (loading) return <PageLoader label="One moment…" />;
   if (user) return <Navigate to="/" replace />;
   return children;
 }
 
 export default function App() {
+  const [showSplash, setShowSplash] = useState(true);
+  const dismissSplash = useCallback(() => setShowSplash(false), []);
+
   return (
     <AuthProvider>
+      {showSplash && <SplashScreen onFinish={dismissSplash} />}
+
       <BrowserRouter>
         <Routes>
           {/* Public auth routes — no sidebar */}
           <Route path="/login" element={<GuestRoute><Login /></GuestRoute>} />
           <Route path="/signup" element={<GuestRoute><Signup /></GuestRoute>} />
+          <Route path="/forgot-password" element={<GuestRoute><ForgotPassword /></GuestRoute>} />
           <Route path="/shared/:token" element={<SharedTrip />} />
 
           {/* Protected routes — sidebar layout */}
